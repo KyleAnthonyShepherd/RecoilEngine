@@ -1091,6 +1091,7 @@ void CWeapon::Init()
 
 void CWeapon::Fire(bool scriptCall)
 {
+	ZoneScoped;
 	owner->lastFireWeapon = gs->frameNum;
 
 	// target-leading can nudge currentTargetPos into an adjacent quadfield cell

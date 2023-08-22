@@ -10,6 +10,8 @@
 #include <cassert>
 #include <limits>
 
+#include <tracy/Tracy.hpp>
+
 #undef far // avoid collision with windef.h
 #undef near
 
@@ -77,6 +79,7 @@ static inline float LineGroundSquareCol(
 	const int xs,
 	const int ys
 ) {
+	ZoneScoped;
 	const bool inMap = (xs >= 0) && (ys >= 0) && (xs <= mapDims.mapxm1) && (ys <= mapDims.mapym1);
 //	assert(inMap);
 	if (!inMap)
@@ -210,6 +213,7 @@ inline static bool ClampInMapHeight(float3& from, float3& to)
 
 float CGround::LineGroundCol(float3 from, float3 to, bool synced)
 {
+	ZoneScoped;
 	const float* hm  = readMap->GetSharedCornerHeightMap(synced);
 	const float3* nm = readMap->GetSharedFaceNormals(synced);
 

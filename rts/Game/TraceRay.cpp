@@ -20,6 +20,8 @@
 #include "Sim/Weapons/WeaponDef.h"
 #include "System/SpringMath.h"
 
+#include <tracy/Tracy.hpp>
+
 #include <algorithm>
 #include <vector>
 
@@ -205,6 +207,7 @@ float TraceRay(
 	CFeature*& hitFeature,
 	CollisionQuery* hitColQuery
 ) {
+	ZoneScoped;
 	// NOTE:
 	//   the bits here and in Test*Cone are interpreted as "do not scan for {enemy,friendly,...}
 	//   objects in quads" rather than "return false if ray hits an {enemy,friendly,...} object"

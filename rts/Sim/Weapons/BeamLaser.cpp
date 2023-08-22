@@ -250,6 +250,7 @@ float3 CBeamLaser::GetFireDir(bool sweepFire, bool scriptCall)
 
 void CBeamLaser::FireImpl(const bool scriptCall)
 {
+	ZoneScoped;
 	// sweepfire must exclude regular fire (!)
 	if (sweepFireState.IsSweepFiring())
 		return;
@@ -259,6 +260,7 @@ void CBeamLaser::FireImpl(const bool scriptCall)
 
 void CBeamLaser::FireInternal(float3 curDir)
 {
+	ZoneScoped;
 	float actualRange = range;
 	float rangeMod = 1.0f - (0.05f * owner->UnderFirstPersonControl());
 

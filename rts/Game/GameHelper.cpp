@@ -39,6 +39,7 @@
 #include "System/SpringMath.h"
 #include "System/Sound/ISoundChannels.h"
 
+#include <tracy/Tracy.hpp>
 
 static CGameHelper gGameHelper;
 CGameHelper* helper = &gGameHelper;
@@ -237,6 +238,7 @@ void CGameHelper::DamageObjectsInExplosionRadius(
 }
 
 void CGameHelper::Explosion(const CExplosionParams& params) {
+	ZoneScoped;
 	const DamageArray& damages = params.damages;
 
 	// if weaponDef is NULL, this is a piece-explosion

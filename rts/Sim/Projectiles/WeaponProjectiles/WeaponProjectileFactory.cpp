@@ -16,7 +16,10 @@
 #include "Sim/Projectiles/ProjectileMemPool.h"
 #include "Sim/Weapons/WeaponDef.h"
 
+#include <tracy/Tracy.hpp>
+
 unsigned int WeaponProjectileFactory::LoadProjectile(const ProjectileParams& params) {
+	ZoneScoped;
 	const WeaponDef* weaponDef = params.weaponDef;
 	const CWeaponProjectile* projectile = nullptr;
 
