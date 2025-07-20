@@ -1590,8 +1590,7 @@ float3 CWeapon::GetLeadVec(const CUnit* unit) const
 	const float predictMult = mix(predictSpeedMod, 1.0f, weaponDef->predictBoost);
 	float3 lead = unit->speed;
 	if (accurateLeading > 0) {
-		float predictTime = 1.0f;
-		predictTime = GetAccuratePredictedImpactTime(unit);
+		float predictTime = GetAccuratePredictedImpactTime(unit);
 		lead = unit->speed * predictTime * predictMult;
 	} else {
 		float predictTime = GetPredictedImpactTime(unit->pos);
