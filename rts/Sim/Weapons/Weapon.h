@@ -96,6 +96,8 @@ public:
 	bool StopAttackingAllyTeam(const int ally);
 
 	bool IsFastAutoRetargetingEnabled() const { return fastAutoRetargeting; }
+	void UpdateWeaponErrorVector();
+	void UpdateWeaponVectors();
 
 protected:
 	virtual void FireImpl(const bool scriptCall) {}
@@ -107,7 +109,6 @@ protected:
 	static bool TargetInWater(const float3 tgtPos, const SWeaponTarget&);
 
 	void UpdateWeaponPieces(const bool updateAimFrom = true);
-	void UpdateWeaponVectors();
 	float3 GetLeadVec(const CUnit* unit) const;
 	float GetAccuratePredictedImpactTime(const CUnit* unit) const;
 	float GetSafeInterceptTime(const CUnit* unit, float predictMult) const;
@@ -151,6 +152,8 @@ public:
 	int projectilesPerShot;                 // number of projectiles per shot
 	int nextSalvo;                          // when the next shot in the current salvo will fire
 	int salvoLeft;                          // number of shots left in current salvo
+	int salvoWindup;                        // delay before first shot (in frames)
+	int ttl;                                // flight time for most projectile type weapons except for Starburst
 
 	float range;
 	float projectileSpeed;
@@ -162,12 +165,12 @@ public:
 	bool hasTargetWeight;                   // set when there's a TargetWeight() function for this weapon
 	bool angleGood;                         // set when script indicated ready to fire
 	bool avoidTarget;                       // set when the script wants the weapon to pick a new target, reset once one has been chosen
-	bool onlyForward;                       // can only fire in the forward direction of the unit (for aircrafts mostly?)
+	bool onlyForward;                       // can only fire in the forward direction of the unit (for aircraft mostly?)
 	bool doTargetGroundPos;                 // (used for bombers) target the ground pos under the unit instead of the center aimPos
 	bool noAutoTarget;
 	bool alreadyWarnedAboutMissingPieces;
 
-	unsigned int badTargetCategory;         // targets in this category get a lot lower targetting priority
+	unsigned int badTargetCategory;         // targets in this category get a lot lower targeting priority
 	unsigned int onlyTargetCategory;        // only targets in this category can be targeted (default 0xffffffff)
 
 	float buildPercent;                     // how far we have come on building current missile if stockpiling
@@ -205,6 +208,7 @@ public:
 	bool fastAutoRetargeting;
 	bool fastQueryPointUpdate;
 	bool accurateLeading;
+	unsigned int burstControlWhenOutOfArc;
 
 protected:
 	SWeaponTarget currentTarget;

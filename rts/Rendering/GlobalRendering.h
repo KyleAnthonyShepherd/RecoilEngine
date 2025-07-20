@@ -10,6 +10,7 @@
 #include "System/Matrix44f.h"
 #include "System/creg/creg_cond.h"
 #include "System/Misc/SpringTime.h"
+#include "System/UnorderedSet.hpp"
 #include "System/type2.h"
 
 struct SDL_version;
@@ -57,7 +58,7 @@ public:
 
 	void MakeCurrentContext(bool clear) const;
 
-	void CheckGLExtensions() const;
+	void CheckGLExtensions();
 	void SetGLSupportFlags();
 	void QueryVersionInfo(char (&sdlVersionStr)[64], char (&glVidMemStr)[64]);
 	void QueryGLMaxVals();
@@ -105,6 +106,8 @@ public:
 	int GetCurrentDisplayIndex() const;
 	void GetDisplayBounds(SDL_Rect& r, const int* di = nullptr) const;
 	void GetUsableDisplayBounds(SDL_Rect& r, const int* di = nullptr) const;
+
+	bool IsExtensionSupported(const char* ext) const;
 
 	bool CheckGLMultiSampling() const;
 	bool CheckGLContextVersion(const int2& minCtx) const;
@@ -212,7 +215,6 @@ public:
 	float aspectRatio;
 
 	int forceDisablePersistentMapping;
-	int forceDisableShaders;
 	int forceDisableGL4;
 	int forceCoreContext;
 	int forceSwapBuffers;
@@ -223,6 +225,7 @@ public:
 	 * Level of multisample anti-aliasing
 	 */
 	int msaaLevel;
+	float minSampleShadingRate;
 
 	/**
 	 * @brief maxTextureSize
@@ -230,6 +233,7 @@ public:
 	 * maximum 2D texture size
 	 */
 	int maxTextureSize;
+	int maxTexSlots;
 	int maxFragShSlots;
 	int maxCombShSlots;
 
@@ -284,7 +288,7 @@ public:
 	 * @brief GPU driver's vendor
 	 *
 	 * These can be used to enable workarounds for bugs in their drivers.
-	 * Note, you should always give the user the possiblity to override such workarounds via config-tags.
+	 * Note, you should always give the user the possibility to override such workarounds via config-tags.
 	 */
 	bool haveAMD;
 	bool haveMesa;
@@ -306,7 +310,7 @@ public:
 	*/
 	bool supportPersistentMapping;
 
-	// GLEW_ARB_explicit_attrib_location
+	// GLAD_GL_ARB_explicit_attrib_location
 	bool supportExplicitAttribLoc;
 
 	/**
@@ -314,7 +318,6 @@ public:
 	 *
 	 * Especially some ATI cards report that they support NPOTs, but don't (or just very limited).
 	 */
-	bool supportNonPowerOfTwoTex;
 	bool supportTextureQueryLOD;
 
 	bool supportMSAAFrameBuffer;
@@ -329,7 +332,6 @@ public:
 	/**
 	 * Shader capabilities
 	 */
-	bool haveGLSL;
 	bool haveGL4;
 
 	/**
@@ -365,6 +367,7 @@ public:
 	bool fullScreen;
 	bool borderless;
 
+	bool underExternalDebug;
 public:
 	SDL_Window* sdlWindow;
 	SDL_GLContext glContext;
@@ -396,8 +399,10 @@ public:
 	static constexpr uint32_t FRAME_REF_TIME_QUERY_IDX = 0;
 	static constexpr uint32_t FRAME_END_TIME_QUERY_IDX = NUM_OPENGL_TIMER_QUERIES - 1;
 private:
+	void SetMinSampleShadingRate();
 	bool SetWindowMinMaximized(bool maximize) const;
 private:
+	spring::unordered_set<std::string> glExtensions;
 	// double-buffered; results from frame N become available on frame N+1
 	std::array<uint32_t, NUM_OPENGL_TIMER_QUERIES * 2> glTimerQueries;
 private:

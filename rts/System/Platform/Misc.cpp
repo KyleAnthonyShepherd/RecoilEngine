@@ -58,6 +58,7 @@
 #include "System/StringUtil.h"
 #include "System/Log/ILog.h"
 #include "System/FileSystem/FileSystem.h"
+#include "System/Platform/Hardware.h"
 #if defined(_WIN32)
 #include "System/Platform/Win/WinVersion.h"
 #endif
@@ -69,7 +70,7 @@
 /**
  * Returns a handle to the currently loaded module.
  * Note: requires at least Windows 2000
- * @return handle to the currently loaded module, or NULL if an error occures
+ * @return handle to the currently loaded module, or NULL if an error occurs
  */
 static HMODULE GetCurrentModule()
 {
@@ -247,7 +248,7 @@ namespace Platform
 		// this will only be used if moduleFilePath stays empty
 		const char* error = nullptr;
 
-	#if defined(__linux__) || defined(__APPLE__) || defined(__FreeBSD__)
+	#if defined(__linux__) || defined(__APPLE__) || defined(__FreeBSD__) || defined(__OpenBSD__)
 		#ifdef __APPLE__
 		#define SHARED_LIBRARY_EXTENSION "dylib"
 		#else
@@ -381,6 +382,8 @@ namespace Platform
 		return "Linux";
 		#elif defined(__FreeBSD__)
 		return "FreeBSD";
+		#elif defined(__OpenBSD__)
+		return "OpenBSD";
 		#elif defined(__APPLE__)
 		return "MacOS";
 		#else
@@ -408,7 +411,6 @@ namespace Platform
 		std::string ret;
 
 		FILE* cpuInfo = fopen("/proc/cpuinfo", "r");
-		FILE* memInfo = fopen("/proc/meminfo", "r");
 
 		char buf[1024];
 		char tmp[1024];
@@ -430,36 +432,13 @@ namespace Platform
 			fclose(cpuInfo);
 		}
 
-		if (memInfo != nullptr) {
-			while (fgets(buf, sizeof(buf), memInfo) != nullptr) {
-				if (strstr(buf, "MemTotal") != nullptr) {
-					const char* s = strstr(buf, ": ") + 2;
-					const char* e = s;
-
-					for (     ; !std::isdigit(*s); s++) {}
-					for (e = s;  std::isdigit(*e); e++) {}
-
-					memset(tmp, 0, sizeof(tmp));
-					memcpy(tmp, s, e - s);
-
-					// sufficient up to 4TB
-					uint32_t kb = 0;
-
-					sscanf(tmp, "%u", &kb);
-					sprintf(tmp, "%u", kb / 1024);
-
-					ret += (std::string(tmp) + "MB RAM");
-					break;
-				}
-			}
-
-			fclose(memInfo);
-		}
+		uint64_t totalRam = TotalRAM();
+		sprintf(tmp, "%lu", totalRam / (1024*1024));
+		ret += (std::string(tmp) + "MB RAM");
 
 		return ret;
 	}
 	#endif
-
 
 	std::string GetSysInfoHash() {
 		std::vector<uint8_t> sysInfo;
@@ -516,6 +495,30 @@ namespace Platform
 
 	uint32_t NativeWordSize() { return (sizeof(void*)); }
 	uint32_t SystemWordSize() { return ((Is32BitEmulation())? 8: NativeWordSize()); }
+
+	std::string GetLastErrorAsString()
+	{
+#ifdef _WIN32
+		return GetLastErrorAsString(GetLastError());
+#else
+		return GetLastErrorAsString(errno);
+#endif
+	}
+
+	std::string GetLastErrorAsString(uint32_t errCode)
+	{
+#ifdef _WIN32
+		LPSTR messageBuffer = nullptr;
+		size_t size = ::FormatMessageA(
+			FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
+			nullptr, errCode, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), (LPSTR)&messageBuffer, 0, nullptr);
+		std::string retVal(messageBuffer, size);
+		::LocalFree(messageBuffer);
+		return retVal;
+#else
+		return std::string(strerror(errCode));
+#endif
+	}
 
 	int SetEnvironment(const char* name, const char* value, int overwrite)
 	{

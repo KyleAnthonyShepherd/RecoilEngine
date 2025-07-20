@@ -30,7 +30,6 @@ public:
 
 	static void InitStatic();
 	static void KillStatic();
-
 private:
 	CUnitScript* currentScript = nullptr;
 

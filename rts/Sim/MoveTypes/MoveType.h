@@ -29,8 +29,8 @@ public:
 	virtual void StopMoving(bool callScript = false, bool hardStop = false, bool cancelRaw = false) = 0;
 	virtual bool CanApplyImpulse(const float3&) { return false; }
 	virtual void LeaveTransport() {}
-	virtual void Connect() {}
-	virtual void Disconnect() {}
+	virtual void Connect();
+	virtual void Disconnect();
 
 	// generic setter for Lua-writable values
 	virtual bool SetMemberValue(unsigned int memberHash, void* memberValue);
@@ -53,17 +53,14 @@ public:
 
 	virtual bool Update() = 0;
 	virtual void SlowUpdate();
-	void UpdateCollisionMap();
-
-	virtual void UpdatePreCollisionsMt() {};
-	virtual void UpdatePreCollisions() {};
-	virtual void UpdateCollisionDetections() {};
-	virtual void ProcessCollisionEvents() {};
+	void UpdateCollisionMap(bool force = false);
+	void UpdateGroundBlockMap();
 
 	virtual bool IsSkidding() const { return false; }
 	virtual bool IsFlying() const { return false; }
 	virtual bool IsReversing() const { return false; }
 	virtual bool IsPushResistant() const { return false; }
+	virtual bool IsPushResitanceBlockActive() const { return false; }
 
 	bool UseHeading(      ) const { return (useHeading    ); }
 	bool UseHeading(bool b)       { return (useHeading = b); }
@@ -86,7 +83,7 @@ public:
 		return dist;
 	}
 
-	float CalcScriptMoveRate(float speed, float nsteps) const { return Clamp(math::floor((speed / maxSpeed) * nsteps), 0.0f, nsteps - 1.0f); }
+	float CalcScriptMoveRate(float speed, float nsteps) const { return std::clamp(math::floor((speed / maxSpeed) * nsteps), 0.0f, nsteps - 1.0f); }
 	float CalcStaticTurnRadius() const;
 
 	virtual void SyncWaypoints() {}

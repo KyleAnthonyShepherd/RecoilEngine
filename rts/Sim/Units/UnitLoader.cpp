@@ -19,6 +19,7 @@
 #include "Map/ReadMap.h"
 
 #include "Sim/Ecs/Registry.h"
+#include "Sim/Features/Feature.h"
 #include "Sim/Features/FeatureDef.h"
 #include "Sim/Features/FeatureDefHandler.h"
 #include "Sim/Features/FeatureHandler.h"
@@ -28,10 +29,13 @@
 #include "System/Log/ILog.h"
 #include "System/Platform/Watchdog.h"
 
+#include "System/Misc/TracyDefs.h"
+
 
 
 CUnitLoader* CUnitLoader::GetInstance()
 {
+	RECOIL_DETAILED_TRACY_ZONE;
 	// NOTE: UnitLoader has no internal state, so this is fine wrt. reloading
 	static CUnitLoader instance;
 	return &instance;
@@ -39,6 +43,7 @@ CUnitLoader* CUnitLoader::GetInstance()
 
 CCommandAI* CUnitLoader::NewCommandAI(CUnit* u, const UnitDef* ud)
 {
+	RECOIL_DETAILED_TRACY_ZONE;
 	static_assert(sizeof(CFactoryCAI) <= sizeof(u->caiMemBuffer), "");
 	static_assert(sizeof(CBuilderCAI) <= sizeof(u->caiMemBuffer), "");
 	static_assert(sizeof(    CAirCAI) <= sizeof(u->caiMemBuffer), "");
@@ -66,6 +71,7 @@ CCommandAI* CUnitLoader::NewCommandAI(CUnit* u, const UnitDef* ud)
 
 CUnit* CUnitLoader::LoadUnit(const std::string& name, const UnitLoadParams& params)
 {
+	RECOIL_DETAILED_TRACY_ZONE;
 	const_cast<UnitLoadParams&>(params).unitDef = unitDefHandler->GetUnitDefByName(name);
 
 	if (params.unitDef == nullptr)
@@ -76,6 +82,7 @@ CUnit* CUnitLoader::LoadUnit(const std::string& name, const UnitLoadParams& para
 
 CUnit* CUnitLoader::LoadUnit(const UnitLoadParams& params)
 {
+	RECOIL_DETAILED_TRACY_ZONE;
 	CUnit* unit = nullptr;
 
 	{
@@ -113,14 +120,15 @@ CUnit* CUnitLoader::LoadUnit(const UnitLoadParams& params)
 
 void CUnitLoader::ParseAndExecuteGiveUnitsCommand(const std::vector<std::string>& args, int team)
 {
+	RECOIL_DETAILED_TRACY_ZONE;
 	if (args.size() < 2) {
-		LOG_L(L_WARNING, "[%s] not enough arguments (\"/give [amount] <objectName | 'all'> [team] [@x, y, z]\")", __FUNCTION__);
+		LOG_L(L_WARNING, "[%s] not enough arguments (\"/give [amount] <objectName | 'all'> [team] [@x,y,z]\")", __FUNCTION__);
 		return;
 	}
 
 	float3 pos;
-	if (sscanf(args[args.size() - 1].c_str(), "@%f, %f, %f", &pos.x, &pos.y, &pos.z) != 3) {
-		LOG_L(L_WARNING, "[%s] invalid position argument (\"/give [amount] <objectName | 'all'> [team] [@x, y, z]\")", __FUNCTION__);
+	if (sscanf(args[args.size() - 1].c_str(), "@%f,%f,%f", &pos.x, &pos.y, &pos.z) != 3) {
+		LOG_L(L_WARNING, "[%s] invalid position argument (\"/give [amount] <objectName | 'all'> [team] [@x,y,z]\")", __FUNCTION__);
 		return;
 	}
 
@@ -174,6 +182,7 @@ void CUnitLoader::ParseAndExecuteGiveUnitsCommand(const std::vector<std::string>
 
 void CUnitLoader::GiveUnits(const std::string& objectName, float3 pos, int amount, int team, int featureAllyTeam)
 {
+	RECOIL_DETAILED_TRACY_ZONE;
 	const CTeam* receivingTeam = teamHandler.Team(team);
 
 	if (objectName == "all") {
@@ -188,8 +197,8 @@ void CUnitLoader::GiveUnits(const std::string& objectName, float3 pos, int amoun
 		const int sqSize = math::ceil(math::sqrt((float) numRequestedUnits));
 		const float sqHalfMapSize = sqSize / 2 * 10 * SQUARE_SIZE;
 
-		pos.x = Clamp(pos.x, sqHalfMapSize, float3::maxxpos - sqHalfMapSize - 1);
-		pos.z = Clamp(pos.z, sqHalfMapSize, float3::maxzpos - sqHalfMapSize - 1);
+		pos.x = std::clamp(pos.x, sqHalfMapSize, float3::maxxpos - sqHalfMapSize - 1);
+		pos.z = std::clamp(pos.z, sqHalfMapSize, float3::maxzpos - sqHalfMapSize - 1);
 
 		for (int a = 1; a <= numRequestedUnits; ++a) {
 			Watchdog::ClearTimers(false, true);
@@ -213,7 +222,10 @@ void CUnitLoader::GiveUnits(const std::string& objectName, float3 pos, int amoun
 				true,
 			};
 
-			LoadUnit(unitParams);
+			auto* unit = LoadUnit(unitParams);
+
+			// special treatment because units spawned with cheats appear before the gameframe
+			unit->UpdatePrevFrameTransform();
 		}
 	} else {
 		unsigned int numRequestedUnits = amount;
@@ -273,7 +285,10 @@ void CUnitLoader::GiveUnits(const std::string& objectName, float3 pos, int amoun
 						true,
 					};
 
-					LoadUnit(unitParams);
+					auto* unit = LoadUnit(unitParams);
+
+					// special treatment because units spawned with cheats appear before the gameframe
+					unit->UpdatePrevFrameTransform();
 				}
 			}
 
@@ -321,7 +336,11 @@ void CUnitLoader::GiveUnits(const std::string& objectName, float3 pos, int amoun
 						0, // smokeTime
 					};
 
-					featureHandler.LoadFeature(params);
+					auto* feature = featureHandler.LoadFeature(params);
+
+					// special treatment because features spawned with cheats appear before the gameframe
+					if (feature)
+						feature->UpdatePrevFrameTransform();
 
 					--total;
 				}
@@ -338,6 +357,7 @@ void CUnitLoader::GiveUnits(const std::string& objectName, float3 pos, int amoun
 
 void CUnitLoader::FlattenGround(const CUnit* unit)
 {
+	RECOIL_DETAILED_TRACY_ZONE;
 	const UnitDef* unitDef = unit->unitDef;
 	// const MoveDef* moveDef = unit->moveDef;
 
@@ -374,6 +394,7 @@ void CUnitLoader::FlattenGround(const CUnit* unit)
 
 void CUnitLoader::RestoreGround(const CUnit* unit)
 {
+	RECOIL_DETAILED_TRACY_ZONE;
 	const UnitDef* unitDef = unit->unitDef;
 
 	if (mapDamage->Disabled())

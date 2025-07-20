@@ -20,7 +20,13 @@ class CUnitScript
 	CR_DECLARE(CUnitScript)
 	CR_DECLARE_SUB(AnimInfo)
 public:
-	enum AnimType {ANone = -1, ATurn = 0, ASpin = 1, AMove = 2};
+	enum AnimType {
+		ANone = -1,
+		ATurn = 0,
+		ASpin = 1,
+		AMove = 2,
+		ACount = 3
+	};
 
 protected:
 	CUnit* unit;
@@ -42,8 +48,8 @@ protected:
 
 	typedef bool(CUnitScript::*TickAnimFunc)(int, LocalModelPiece&, AnimInfo&);
 
-	AnimContainerType anims[AMove + 1];
-
+	std::array<AnimContainerType, ACount> anims;
+	std::array<AnimContainerType, ACount> doneAnims;
 
 	bool hasSetSFXOccupy;
 	bool hasRockUnit;
@@ -81,13 +87,14 @@ public:
 #define SCRIPT_TO_LOCALPIECE_FUNC(RetType, ScriptFunc, PieceFunc)       \
 	RetType ScriptFunc(int scriptPieceNum) const {                      \
 		if (!PieceExists(scriptPieceNum))                               \
-			return {};                                                  \
+			return RetType{};                                           \
 		LocalModelPiece* p = GetScriptLocalModelPiece(scriptPieceNum);  \
 		return (p->PieceFunc());                                        \
 	}
 
-	SCRIPT_TO_LOCALPIECE_FUNC(    float3, GetPiecePos,    GetAbsolutePos     )
-	SCRIPT_TO_LOCALPIECE_FUNC(CMatrix44f, GetPieceMatrix, GetModelSpaceMatrix)
+	SCRIPT_TO_LOCALPIECE_FUNC(    float3, GetPiecePos      ,    GetAbsolutePos     )
+	SCRIPT_TO_LOCALPIECE_FUNC( Transform, GetPieceTransform, GetModelSpaceTransform)
+	SCRIPT_TO_LOCALPIECE_FUNC(CMatrix44f, GetPieceMatrix   , GetModelSpaceMatrix   )
 
 	bool GetEmitDirPos(int scriptPieceNum, float3& pos, float3& dir) const {
 		if (!PieceExists(scriptPieceNum))
@@ -106,12 +113,12 @@ public:
 	      CUnit* GetUnit()       { return unit; }
 	const CUnit* GetUnit() const { return unit; }
 
-	bool Tick(int tickRate);
+	void TickAllAnims(int tickRate);
+	bool TickAnimFinished(int tickRate);
 	// note: must copy-and-set here (LMP dirty flag, etc)
-	bool TickMoveAnim(int tickRate, LocalModelPiece& lmp, AnimInfo& ai) { float3 pos = lmp.GetPosition(); const bool ret = MoveToward(pos[ai.axis], ai.dest, ai.speed / tickRate); lmp.SetPosition(pos); return ret; }
-	bool TickTurnAnim(int tickRate, LocalModelPiece& lmp, AnimInfo& ai) { float3 rot = lmp.GetRotation(); rot[ai.axis] = math::fmod(rot[ai.axis], math::TWOPI); const bool ret = TurnToward(rot[ai.axis], ai.dest, ai.speed / tickRate         ); lmp.SetRotation(rot); return ret; }
-	bool TickSpinAnim(int tickRate, LocalModelPiece& lmp, AnimInfo& ai) { float3 rot = lmp.GetRotation(); rot[ai.axis] = math::fmod(rot[ai.axis], math::TWOPI); const bool ret =     DoSpin(rot[ai.axis], ai.dest, ai.speed, ai.accel, tickRate); lmp.SetRotation(rot); return ret; }
-	void TickAnims(int tickRate, const TickAnimFunc& tickAnimFunc, AnimContainerType& liveAnims, AnimContainerType& doneAnims);
+	bool TickMoveAnim(int tickRate, LocalModelPiece& lmp, AnimInfo& ai);
+	bool TickTurnAnim(int tickRate, LocalModelPiece& lmp, AnimInfo& ai);
+	bool TickSpinAnim(int tickRate, LocalModelPiece& lmp, AnimInfo& ai);
 
 	// animation, used by CCobThread
 	void Spin(int piece, int axis, float speed, float accel);

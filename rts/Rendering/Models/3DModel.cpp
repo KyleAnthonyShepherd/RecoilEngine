@@ -16,10 +16,11 @@
 #include <cctype>
 #include <cstring>
 
-#include <tracy/Tracy.hpp>
+#include "System/Misc/TracyDefs.h"
 
-CR_BIND(LocalModelPiece, (nullptr))
+CR_BIND(LocalModelPiece, )
 CR_REG_METADATA(LocalModelPiece, (
+	CR_MEMBER(prevModelSpaceTra),
 	CR_MEMBER(pos),
 	CR_MEMBER(rot),
 	CR_MEMBER(dir),
@@ -35,10 +36,12 @@ CR_REG_METADATA(LocalModelPiece, (
 	// reload
 	CR_IGNORED(original),
 
-	CR_IGNORED(dirty),
-	CR_IGNORED(customDirty),
-	CR_IGNORED(modelSpaceMat),
-	CR_IGNORED(pieceSpaceMat),
+	CR_MEMBER(dirty),
+	CR_MEMBER(wasUpdated),
+	CR_MEMBER(noInterpolation),
+	CR_MEMBER(modelSpaceTra),
+	CR_MEMBER(pieceSpaceTra),
+	CR_MEMBER(modelSpaceMat),
 
 	CR_IGNORED(lodDispLists) //FIXME GL idx!
 ))
@@ -52,13 +55,16 @@ CR_REG_METADATA(LocalModel, (
 	CR_MEMBER(needsBoundariesRecalc)
 ))
 
+static_assert(sizeof(SVertexData) == (3 + 3 + 3 + 3 + 4 + 2 + 1) * 4);
 
 void S3DModelHelpers::BindLegacyAttrVBOs()
 {
+	RECOIL_DETAILED_TRACY_ZONE;
 	S3DModelVAO::GetInstance().BindLegacyVertexAttribsAndVBOs();
 }
 void S3DModelHelpers::UnbindLegacyAttrVBOs()
 {
+	RECOIL_DETAILED_TRACY_ZONE;
 	S3DModelVAO::GetInstance().UnbindLegacyVertexAttribsAndVBOs();
 }
 
@@ -68,6 +74,7 @@ void S3DModelHelpers::UnbindLegacyAttrVBOs()
 
 void S3DModelPiece::DrawStaticLegacy(bool bind, bool bindPosMat) const
 {
+	RECOIL_DETAILED_TRACY_ZONE;
 	if (!HasGeometryData())
 		return;
 
@@ -75,7 +82,7 @@ void S3DModelPiece::DrawStaticLegacy(bool bind, bool bindPosMat) const
 
 	if (bindPosMat) {
 		glPushMatrix();
-		glMultMatrixf(bposeMatrix);
+		glMultMatrixf(bposeTransform.ToMatrix());
 		DrawElements();
 		glPopMatrix();
 	}
@@ -89,6 +96,7 @@ void S3DModelPiece::DrawStaticLegacy(bool bind, bool bindPosMat) const
 // only used by projectiles with the PF_Recursive flag
 void S3DModelPiece::DrawStaticLegacyRec() const
 {
+	RECOIL_DETAILED_TRACY_ZONE;
 	S3DModelHelpers::BindLegacyAttrVBOs();
 
 	DrawStaticLegacy(false, false);
@@ -103,6 +111,7 @@ void S3DModelPiece::DrawStaticLegacyRec() const
 
 float3 S3DModelPiece::GetEmitPos() const
 {
+	RECOIL_DETAILED_TRACY_ZONE;
 	switch (vertices.size()) {
 		case 0:
 		case 1: { return ZeroVector; } break;
@@ -112,6 +121,7 @@ float3 S3DModelPiece::GetEmitPos() const
 
 float3 S3DModelPiece::GetEmitDir() const
 {
+	RECOIL_DETAILED_TRACY_ZONE;
 	switch (vertices.size()) {
 		case 0: { return FwdVector; } break;
 		case 1: { return GetVertexPos(0); } break;
@@ -122,6 +132,7 @@ float3 S3DModelPiece::GetEmitDir() const
 
 void S3DModelPiece::CreateShatterPieces()
 {
+	RECOIL_DETAILED_TRACY_ZONE;
 	if (!HasGeometryData())
 		return;
 
@@ -135,6 +146,7 @@ void S3DModelPiece::CreateShatterPieces()
 
 void S3DModelPiece::CreateShatterPiecesVariation(int num)
 {
+	RECOIL_DETAILED_TRACY_ZONE;
 	using ShatterPartDataPair = std::pair<S3DModelPiecePart::RenderData, std::vector<uint32_t>>;
 	using ShatterPartsBuffer  = std::array<ShatterPartDataPair, S3DModelPiecePart::SHATTER_MAX_PARTS>;
 
@@ -227,26 +239,57 @@ void S3DModelPiece::CreateShatterPiecesVariation(int num)
 
 void S3DModelPiece::Shatter(float pieceChance, int modelType, int texType, int team, const float3 pos, const float3 speed, const CMatrix44f& m) const
 {
+	RECOIL_DETAILED_TRACY_ZONE;
 	const float2  pieceParams = {float3::max(float3::fabs(maxs), float3::fabs(mins)).Length(), pieceChance};
 	const   int2 renderParams = {texType, team};
 
 	projectileHandler.AddFlyingPiece(modelType, this, m, pos, speed, pieceParams, renderParams);
 }
 
+void S3DModelPiece::SetPieceTransform(const Transform& parentTra)
+{
+	bposeTransform = parentTra * ComposeTransform(offset, ZeroVector, scale);
+
+	for (S3DModelPiece* c : children) {
+		c->SetPieceTransform(bposeTransform);
+	}
+}
+
+Transform S3DModelPiece::ComposeTransform(const float3& t, const float3& r, float s) const
+{
+	// NOTE:
+	//   ORDER MATTERS (T(baked + script) * R(baked) * R(script) * S(baked))
+	//   translating + rotating + scaling is faster than matrix-multiplying
+	//   m is identity so m.SetPos(t)==m.Translate(t) but with fewer instrs
+	Transform tra;
+	tra.t = t;
+
+	if (hasBakedTra)
+		tra *= bakedTransform;
+
+	tra *= Transform(CQuaternion::FromEulerYPRNeg(-r), ZeroVector, s);
+	return tra;
+}
+
 
 void S3DModelPiece::PostProcessGeometry(uint32_t pieceIndex)
 {
+	RECOIL_DETAILED_TRACY_ZONE;
 	if (!HasGeometryData())
 		return;
 
 
-	for (auto& v : vertices)
-		if (v.boneIDs == SVertexData::DEFAULT_BONEIDS)
-			v.boneIDs = { static_cast<uint8_t>(pieceIndex), 255, 255, 255 };
+	for (auto& v : vertices) {
+		if (v.boneIDsLow == SVertexData::DEFAULT_BONEIDS_LOW && v.boneIDsHigh == SVertexData::DEFAULT_BONEIDS_HIGH) {
+			v.boneIDsLow [0] = static_cast<uint8_t>((pieceIndex     ) & 0xFF);
+			v.boneIDsHigh[0] = static_cast<uint8_t>((pieceIndex >> 8) & 0xFF);
+		}
+	}
 }
 
 void S3DModelPiece::DrawElements(GLuint prim) const
 {
+	RECOIL_DETAILED_TRACY_ZONE;
 	if (indxCount == 0)
 		return;
 	assert(indxCount != ~0u);
@@ -256,6 +299,7 @@ void S3DModelPiece::DrawElements(GLuint prim) const
 
 void S3DModelPiece::DrawShatterElements(uint32_t vboIndxStart, uint32_t vboIndxCount, GLuint prim)
 {
+	RECOIL_DETAILED_TRACY_ZONE;
 	if (vboIndxCount == 0)
 		return;
 
@@ -264,6 +308,7 @@ void S3DModelPiece::DrawShatterElements(uint32_t vboIndxStart, uint32_t vboIndxC
 
 void S3DModelPiece::ReleaseShatterIndices()
 {
+	RECOIL_DETAILED_TRACY_ZONE;
 	shatterIndices.clear();
 }
 
@@ -273,6 +318,7 @@ void S3DModelPiece::ReleaseShatterIndices()
 
 void LocalModel::DrawPieces() const
 {
+	RECOIL_DETAILED_TRACY_ZONE;
 	for (const auto& p : pieces) {
 		p.Draw();
 	}
@@ -280,6 +326,7 @@ void LocalModel::DrawPieces() const
 
 void LocalModel::DrawPiecesLOD(uint32_t lod) const
 {
+	RECOIL_DETAILED_TRACY_ZONE;
 	if (!luaMaterialData.ValidLOD(lod))
 		return;
 
@@ -290,6 +337,7 @@ void LocalModel::DrawPiecesLOD(uint32_t lod) const
 
 void LocalModel::SetLODCount(uint32_t lodCount)
 {
+	RECOIL_DETAILED_TRACY_ZONE;
 	assert(Initialized());
 
 	luaMaterialData.SetLODCount(lodCount);
@@ -299,6 +347,7 @@ void LocalModel::SetLODCount(uint32_t lodCount)
 
 void LocalModel::SetModel(const S3DModel* model, bool initialize)
 {
+	RECOIL_DETAILED_TRACY_ZONE;
 	// make sure we do not get called for trees, etc
 	assert(model != nullptr);
 	assert(model->numPieces >= 1);
@@ -313,7 +362,7 @@ void LocalModel::SetModel(const S3DModel* model, bool initialize)
 			pieces[n].original = omp;
 		}
 
-		pieces[0].UpdateChildMatricesRec(true);
+		pieces[0].UpdateChildTransformRec(true);
 		UpdateBoundingVolume();
 		return;
 	}
@@ -328,7 +377,12 @@ void LocalModel::SetModel(const S3DModel* model, bool initialize)
 	// must recursively update matrices here too: for features
 	// LocalModel::Update is never called, but they might have
 	// baked piece rotations (in the case of .dae)
-	pieces[0].UpdateChildMatricesRec(false);
+	pieces[0].UpdateChildTransformRec(false);
+
+	for (auto& piece : pieces) {
+		piece.SavePrevModelSpaceTransform();
+	}
+
 	UpdateBoundingVolume();
 
 	assert(pieces.size() == model->numPieces);
@@ -336,6 +390,7 @@ void LocalModel::SetModel(const S3DModel* model, bool initialize)
 
 LocalModelPiece* LocalModel::CreateLocalModelPieces(const S3DModelPiece* mpParent)
 {
+	RECOIL_DETAILED_TRACY_ZONE;
 	LocalModelPiece* lmpChild = nullptr;
 
 	// construct an LMP(mp) in-place
@@ -364,15 +419,12 @@ void LocalModel::UpdateBoundingVolume()
 {
 	ZoneScoped;
 
-	if (!needsBoundariesRecalc)
-		return;
-
 	// bounding-box extrema (local space)
 	float3 bbMins = DEF_MIN_SIZE;
 	float3 bbMaxs = DEF_MAX_SIZE;
 
 	for (const auto& lmPiece: pieces) {
-		const CMatrix44f& matrix = lmPiece.GetModelSpaceMatrix();
+		const auto& tra = lmPiece.GetModelSpaceTransform();
 		const S3DModelPiece* piece = lmPiece.original;
 
 		// skip empty pieces or bounds will not be sensible
@@ -396,7 +448,7 @@ void LocalModel::UpdateBoundingVolume()
 		};
 
 		for (const float3& v: verts) {
-			const float3 vertex = matrix * v;
+			const float3 vertex = tra * v;
 
 			bbMins = float3::min(bbMins, vertex);
 			bbMaxs = float3::max(bbMaxs, vertex);
@@ -416,7 +468,8 @@ void LocalModel::UpdateBoundingVolume()
 LocalModelPiece::LocalModelPiece(const S3DModelPiece* piece)
 	: colvol(piece->GetCollisionVolume())
 	, dirty(true)
-	, customDirty(true)
+	, wasUpdated{ true }
+	, noInterpolation{ false }
 
 	, scriptSetVisible(true)
 	, blockScriptAnims(false)
@@ -430,16 +483,17 @@ LocalModelPiece::LocalModelPiece(const S3DModelPiece* piece)
 	assert(piece != nullptr);
 
 	pos = piece->offset;
-	dir = piece->GetEmitDir(); // warning investigated, seems fake
+	dir = piece->GetEmitDir();
 
-	pieceSpaceMat = CalcPieceSpaceMatrix(pos, rot, original->scales);
+	pieceSpaceTra = CalcPieceSpaceTransform(pos, rot, original->scale);
+	prevModelSpaceTra = Transform{ };
 
 	children.reserve(piece->children.size());
 }
 
 void LocalModelPiece::SetDirty() {
+	RECOIL_DETAILED_TRACY_ZONE;
 	dirty = true;
-	SetGetCustomDirty(true);
 
 	for (LocalModelPiece* child: children) {
 		if (child->dirty)
@@ -448,13 +502,8 @@ void LocalModelPiece::SetDirty() {
 	}
 }
 
-bool LocalModelPiece::SetGetCustomDirty(bool cd) const
-{
-	std::swap(cd, customDirty);
-	return cd;
-}
-
 void LocalModelPiece::SetPosOrRot(const float3& src, float3& dst) {
+	RECOIL_DETAILED_TRACY_ZONE;
 	if (blockScriptAnims)
 		return;
 	if (!dirty && !dst.same(src)) {
@@ -466,46 +515,111 @@ void LocalModelPiece::SetPosOrRot(const float3& src, float3& dst) {
 	dst = src;
 }
 
-
-void LocalModelPiece::UpdateChildMatricesRec(bool updateChildMatrices) const
+void LocalModelPiece::ResetWasUpdated() const
 {
+	// wasUpdated needs to trigger twice because otherwise
+	// once all animation of piece stops and dirty is no longer triggered
+	// UpdateObjectTrasform() would exit too early and wouldn't update
+	// prevModelSpaceTra, causing the piece transform to jerk between the
+	// up-to-date modelSpaceTra and stale prevModelSpaceTra
+	// By passing values from right to left we make sure to trigger
+	// wasUpdated[0] || wasUpdated[1] at least twice after such situation
+	// happens, thus uploading prevModelSpaceTra in UpdateObjectTrasform() too
+	wasUpdated[1] = std::exchange(wasUpdated[0], false);
+
+	// use this call to also reset noInterpolation
+	noInterpolation = { false };
+}
+
+const Transform& LocalModelPiece::GetModelSpaceTransform() const
+{
+	if (dirty)
+		UpdateParentMatricesRec();
+
+	return modelSpaceTra;
+}
+
+const CMatrix44f& LocalModelPiece::GetModelSpaceMatrix() const
+{
+	if (dirty)
+		UpdateParentMatricesRec();
+
+	return modelSpaceMat;
+}
+
+void LocalModelPiece::SetScriptVisible(bool b)
+{
+	scriptSetVisible = b;
+	wasUpdated[0] = true; //update for current frame
+}
+
+void LocalModelPiece::SavePrevModelSpaceTransform()
+{
+	prevModelSpaceTra = GetModelSpaceTransform();
+}
+
+Transform LocalModelPiece::GetEffectivePrevModelSpaceTransform() const
+{
+	if (!noInterpolation[0] && !noInterpolation[1] && !noInterpolation[2])
+		return prevModelSpaceTra;
+
+	const auto& lmpTransform = GetModelSpaceTransform();
+	return Transform {
+		noInterpolation[0] ? lmpTransform.r : prevModelSpaceTra.r,
+		noInterpolation[1] ? lmpTransform.t : prevModelSpaceTra.t,
+		noInterpolation[2] ? lmpTransform.s : prevModelSpaceTra.s
+	};
+}
+
+void LocalModelPiece::UpdateChildTransformRec(bool updateChildTransform) const
+{
+	RECOIL_DETAILED_TRACY_ZONE;
+
 	if (dirty) {
 		dirty = false;
-		updateChildMatrices = true;
+		wasUpdated[0] = true;  //update for current frame
+		updateChildTransform = true;
 
-		pieceSpaceMat = CalcPieceSpaceMatrix(pos, rot, original->scales);
+		pieceSpaceTra = CalcPieceSpaceTransform(pos, rot, original->scale);
 	}
 
-	if (updateChildMatrices) {
-		modelSpaceMat = pieceSpaceMat;
+	if (updateChildTransform) {
+		if (parent != nullptr)
+			modelSpaceTra = parent->modelSpaceTra * pieceSpaceTra;
+		else
+			modelSpaceTra = pieceSpaceTra;
 
-		if (parent != nullptr) {
-			modelSpaceMat >>= parent->modelSpaceMat;
-		}
+		modelSpaceMat = modelSpaceTra.ToMatrix();
 	}
 
 	for (auto& child : children) {
-		child->UpdateChildMatricesRec(updateChildMatrices);
+		child->UpdateChildTransformRec(updateChildTransform);
 	}
 }
 
 void LocalModelPiece::UpdateParentMatricesRec() const
 {
+	RECOIL_DETAILED_TRACY_ZONE;
 	if (parent != nullptr && parent->dirty)
 		parent->UpdateParentMatricesRec();
 
 	dirty = false;
+	wasUpdated[0] = true;  //update for current frame
 
-	pieceSpaceMat = CalcPieceSpaceMatrix(pos, rot, original->scales);
-	modelSpaceMat = pieceSpaceMat;
+	pieceSpaceTra = CalcPieceSpaceTransform(pos, rot, original->scale);
 
 	if (parent != nullptr)
-		modelSpaceMat >>= parent->modelSpaceMat;
+		modelSpaceTra = parent->modelSpaceTra * pieceSpaceTra;
+	else
+		modelSpaceTra = pieceSpaceTra;
+
+	modelSpaceMat = modelSpaceTra.ToMatrix();
 }
 
 
 void LocalModelPiece::Draw() const
 {
+	RECOIL_DETAILED_TRACY_ZONE;
 	if (!scriptSetVisible)
 		return;
 
@@ -524,6 +638,7 @@ void LocalModelPiece::Draw() const
 
 void LocalModelPiece::DrawLOD(uint32_t lod) const
 {
+	RECOIL_DETAILED_TRACY_ZONE;
 	if (!scriptSetVisible)
 		return;
 
@@ -546,6 +661,7 @@ void LocalModelPiece::DrawLOD(uint32_t lod) const
 
 void LocalModelPiece::SetLODCount(uint32_t count)
 {
+	RECOIL_DETAILED_TRACY_ZONE;
 	// any new LOD's get null-lists first
 	lodDispLists.resize(count, 0);
 
@@ -557,12 +673,13 @@ void LocalModelPiece::SetLODCount(uint32_t count)
 
 bool LocalModelPiece::GetEmitDirPos(float3& emitPos, float3& emitDir) const
 {
+	RECOIL_DETAILED_TRACY_ZONE;
 	if (original == nullptr)
 		return false;
 
 	// note: actually OBJECT_TO_WORLD but transform is the same
-	emitPos = GetModelSpaceMatrix() *        original->GetEmitPos()        * WORLD_TO_OBJECT_SPACE;
-	emitDir = GetModelSpaceMatrix() * float4(original->GetEmitDir(), 0.0f) * WORLD_TO_OBJECT_SPACE;
+	emitPos = GetModelSpaceTransform() *        original->GetEmitPos()        * WORLD_TO_OBJECT_SPACE;
+	emitDir = GetModelSpaceTransform() * float4(original->GetEmitDir(), 0.0f) * WORLD_TO_OBJECT_SPACE;
 	return true;
 }
 
@@ -571,6 +688,7 @@ bool LocalModelPiece::GetEmitDirPos(float3& emitPos, float3& emitDir) const
 
 S3DModelPiece* S3DModel::FindPiece(const std::string& name)
 {
+	RECOIL_DETAILED_TRACY_ZONE;
 	const auto it = std::find_if(pieceObjects.begin(), pieceObjects.end(), [&name](const S3DModelPiece* piece) {
 		return piece->name == name;
 	});
@@ -582,6 +700,7 @@ S3DModelPiece* S3DModel::FindPiece(const std::string& name)
 
 const S3DModelPiece* S3DModel::FindPiece(const std::string& name) const
 {
+	RECOIL_DETAILED_TRACY_ZONE;
 	const auto it = std::find_if(pieceObjects.begin(), pieceObjects.end(), [&name](const S3DModelPiece* piece) {
 		return piece->name == name;
 		});
@@ -593,6 +712,7 @@ const S3DModelPiece* S3DModel::FindPiece(const std::string& name) const
 
 size_t S3DModel::FindPieceOffset(const std::string& name) const
 {
+	RECOIL_DETAILED_TRACY_ZONE;
 	const auto it = std::find_if(pieceObjects.begin(), pieceObjects.end(), [&name](const S3DModelPiece* piece) {
 		return piece->name == name;
 	});
@@ -601,4 +721,61 @@ size_t S3DModel::FindPieceOffset(const std::string& name) const
 		return size_t(-1);
 
 	return std::distance(pieceObjects.begin(), it);
+}
+
+void S3DModel::SetPieceMatrices()
+{
+	auto* rootPiece = GetRootPiece();
+	rootPiece->SetPieceTransform(Transform());
+
+	// use this occasion and copy bpose matrices
+	for (size_t i = 0; i < pieceObjects.size(); ++i) {
+		const auto* po = pieceObjects[i];
+		traAlloc.UpdateForced(i, po->bposeTransform);
+	}
+}
+
+void S3DModel::FlattenPieceTree(S3DModelPiece* root)
+{
+	assert(root != nullptr);
+
+	pieceObjects.clear();
+	pieceObjects.reserve(numPieces);
+
+	// force mutex just in case this is called from modelLoader.ProcessVertices()
+	// TODO: pass to S3DModel if it is created from LoadModel(ST) or from ProcessVertices(MT)
+	traAlloc = ScopedTransformMemAlloc(numPieces);
+
+	std::vector<S3DModelPiece*> stack = { root };
+
+	while (!stack.empty()) {
+		S3DModelPiece* p = stack.back();
+
+		stack.pop_back();
+		pieceObjects.push_back(p);
+
+		// add children in reverse for the correct DF traversal order
+		for (size_t n = 0; n < p->children.size(); n++) {
+			stack.push_back(p->children[p->children.size() - n - 1]);
+		}
+	}
+}
+
+void S3DModel::UpdatePiecesMinMaxExtents()
+{
+	RECOIL_DETAILED_TRACY_ZONE;
+	for (auto* piece : pieceObjects) {
+		for (const auto& vertex : piece->GetVerticesVec()) {
+			piece->mins = float3::min(piece->mins, vertex.pos);
+			piece->maxs = float3::max(piece->maxs, vertex.pos);
+		}
+	}
+}
+
+void SVertexData::TransformBy(const Transform& transform)
+{
+	pos      = (transform * float4{ pos     , 1.0f }).xyz;
+	normal   = (transform * float4{ normal  , 0.0f }).xyz;
+	sTangent = (transform * float4{ sTangent, 0.0f }).xyz;
+	tTangent = (transform * float4{ tTangent, 0.0f }).xyz;
 }

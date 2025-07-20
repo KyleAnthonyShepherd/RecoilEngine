@@ -5,6 +5,8 @@
  */
 #include "FileSystem.h"
 
+#include <filesystem>
+
 #include "Game/GameVersion.h"
 #include "System/Log/ILog.h"
 #include "System/Platform/Win/win32.h"
@@ -116,7 +118,7 @@ bool FileSystem::FileExists(std::string file)
 	return FileSystemAbstraction::FileExists(FileSystem::GetNormalizedPath(file));
 }
 
-size_t FileSystem::GetFileSize(std::string file)
+size_t FileSystem::GetFileSize(const std::string& file)
 {
 	if (!CheckFile(file))
 		return 0;
@@ -215,32 +217,8 @@ std::string FileSystem::GetExtension(const std::string& path)
 	return "";
 }
 
-
 std::string FileSystem::GetNormalizedPath(const std::string& path) {
-
-	std::string normalizedPath = StringReplace(path, "\\", "/"); // convert to POSIX path separators
-
-	normalizedPath = StringReplace(normalizedPath, "/./", "/");
-
-	try {
-		normalizedPath = spring::regex_replace(normalizedPath, spring::regex("[/]{2,}"), {"/"});
-	} catch (const spring::regex_error& e) {
-		LOG_L(L_WARNING, "[%s][1] regex exception \"%s\" (code=%d)", __func__, e.what(), int(e.code()));
-	}
-
-	try {
-		normalizedPath = spring::regex_replace(normalizedPath, spring::regex("[^/]+[/][.]{2}"), {""});
-	} catch (const spring::regex_error& e) {
-		LOG_L(L_WARNING, "[%s][2] regex exception \"%s\" (code=%d)", __func__, e.what(), int(e.code()));
-	}
-
-	try {
-		normalizedPath = spring::regex_replace(normalizedPath, spring::regex("[/]{2,}"), {"/"});
-	} catch (const spring::regex_error& e) {
-		LOG_L(L_WARNING, "[%s][3] regex exception \"%s\" (code=%d)", __func__, e.what(), int(e.code()));
-	}
-
-	return normalizedPath; // maybe use FixSlashes here
+	return std::filesystem::path(path).lexically_normal().generic_string();
 }
 
 std::string& FileSystem::FixSlashes(std::string& path)
@@ -287,15 +265,6 @@ const std::string& FileSystem::GetCacheBaseDir()
 
 const std::string& FileSystem::GetCacheDir()
 {
-	// cache-dir versioning must not be too finegrained,
-	// we do want to regenerate cache after every commit
-	//
-	// release builds must however also *never* use the
-	// same directory as any previous development build
-	// (regardless of branch), so keep caches separate
-	static const std::string cacheType[2] = {"dev-", "rel-"};
-	static const std::string cacheVersion = SpringVersion::GetMajor() + cacheType[SpringVersion::IsRelease()] + SpringVersion::GetBranch();
-	static const std::string cacheDir = EnsurePathSepAtEnd(GetCacheBaseDir()) + cacheVersion;
+	static const std::string cacheDir = EnsureNoPathSepAtEnd(GetCacheBaseDir());
 	return cacheDir;
 }
-

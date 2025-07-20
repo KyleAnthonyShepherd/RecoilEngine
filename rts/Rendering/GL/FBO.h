@@ -88,6 +88,8 @@ public:
 	 */
 	void AttachTexture(const GLuint texId, const GLenum texTarget = GL_TEXTURE_2D, const GLenum attachment = GL_COLOR_ATTACHMENT0_EXT, const int mipLevel = 0, const int zSlice = 0);
 
+	void AttachTextureLayer(const GLuint texId, const GLenum attachment = GL_COLOR_ATTACHMENT0_EXT, const int mipLevel = 0, const int layer = 0);
+
 	/**
 	 * @brief AttachRenderBuffer
 	 * @param rboId RenderBuffer to attach
@@ -96,7 +98,7 @@ public:
 	void AttachRenderBuffer(const GLuint rboId, const GLenum attachment = GL_COLOR_ATTACHMENT0_EXT);
 
 	/**
-	 * @brief Creates a RenderBufferObject and attachs it to the FBO (it is also auto destructed)
+	 * @brief Creates a RenderBufferObject and attaches it to the FBO (it is also auto destructed)
 	 * @param attachment
 	 * @param format
 	 * @param width
@@ -105,7 +107,7 @@ public:
 	void CreateRenderBuffer(const GLenum attachment, const GLenum format, const GLsizei width, const GLsizei height);
 
 	/**
-	 * @brief Creates a multisampled RenderBufferObject and attachs it to the FBO (it is also auto destructed)
+	 * @brief Creates a multisampled RenderBufferObject and attaches it to the FBO (it is also auto destructed)
 	 * @param attachment
 	 * @param format
 	 * @param width

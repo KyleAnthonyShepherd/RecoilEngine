@@ -126,6 +126,17 @@ void CSound::Kill()
 
 
 void CSound::Cleanup() {
+#ifdef ALC_SOFT_loopback
+	if (hasAlcSoftLoopBack && sdlDeviceID != 0) {
+		LOG("[Sound::%s][SDL_CloseAudioDevice(%d)]", __func__, sdlDeviceID);
+		SDL_CloseAudioDevice(sdlDeviceID);
+		SDL_CloseAudio();
+		SDL_QuitSubSystem(SDL_INIT_AUDIO);
+
+		sdlDeviceID = -1;
+	}
+#endif
+
 	if (curContext != nullptr) {
 		LOG("[Sound::%s][alcDestroyContext(%p)]", __func__, curContext);
 		alcMakeContextCurrent(nullptr);
@@ -138,17 +149,6 @@ void CSound::Cleanup() {
 		alcCloseDevice(curDevice);
 		curDevice = nullptr;
 	}
-
-#ifdef ALC_SOFT_loopback
-	if (hasAlcSoftLoopBack && sdlDeviceID != 0) {
-		LOG("[Sound::%s][SDL_CloseAudioDevice(%d)]", __func__, sdlDeviceID);
-		SDL_CloseAudioDevice(sdlDeviceID);
-		SDL_CloseAudio();
-		SDL_QuitSubSystem(SDL_INIT_AUDIO);
-
-		sdlDeviceID = -1;
-	}
-#endif
 }
 
 
@@ -206,7 +206,7 @@ size_t CSound::GetSoundId(const std::string& name)
 	if (LoadSoundBuffer(name) > 0) {
 		SoundItemNameMap itemMap = defaultItemNameMap;
 		itemMap.erase("file");
-		itemMap.insert("file", name);
+		itemMap.emplace("file", name);
 		return (preloadSet.erase(name), MakeItemFromDef(itemMap));
 	}
 
@@ -416,9 +416,7 @@ static void SDLCALL RenderSDLSamples(void* userdata, Uint8* stream, int len)
 	ALCdevice* dev = snd->GetCurrentDevice();
 
 	assert(snd->GetFrameSize() > 0);
-	// Prevent sigsegv when openal has been closed before sdl
-	if (dev != nullptr) // FIXME: Perhaps can be fixed by reordering ::Cleanup properly?
-		alcRenderSamplesSOFT(dev, stream, len / snd->GetFrameSize());
+	alcRenderSamplesSOFT(dev, stream, len / snd->GetFrameSize());
 }
 
 static const char* ChannelsName(ALCenum chans)
@@ -493,34 +491,52 @@ void CSound::OpenLoopbackDevice(const std::string& deviceName)
 		return;
 	}
 
+	LOG("[Sound::%s] SDL audio device(s): ", __func__);
+	for (int i = 0, n = SDL_GetNumAudioDevices(0); i < n; ++i) {
+		LOG("[Sound::%s]  * \"%d\" \"%s\"", __func__, i, SDL_GetAudioDeviceName(i, 0));
+	}
+
 	SDL_AudioSpec desiredSpec;
 	SDL_AudioSpec obtainedSpec;
 
-	desiredSpec.channels = 2;
 	desiredSpec.format = AUDIO_S16SYS;
 	desiredSpec.freq = 44100;
 	desiredSpec.padding = 0;
 	desiredSpec.samples = 4096;
 	desiredSpec.callback = RenderSDLSamples;
 	desiredSpec.userdata = this;
+	
+	/* SDL bug: can return devices with >2 channels (3D surround), even if we ask for just 2.
+	 * This causes the 2 "primary" channels to be moved in the 3D space compared to their "normal" state
+	 * and directional sound doesn't work anymore (though volume change with distance still does).
+	 * For this reason, the engine rejects such devices down the road. Don't let it get that far and retry instead.
+	 *
+	 * Note that proper support for 3D surround sounds sounds hard, for example as of 2023 counter-strike has very weak support
+	 * for it, apparently noticeably worse than just stereo according to players, despite being in a more relevant genre. */
+	selectedDeviceName = "";
+	for (int channelsDesired : {2, 1}) {
+		desiredSpec.channels = channelsDesired;
 
-    LOG("[Sound::%s] SDL audio device(s): ", __func__);
-    for (int i = 0, n = SDL_GetNumAudioDevices(0); i < n; ++i) {
-        LOG("[Sound::%s]  * \"%d\" \"%s\"", __func__, i, SDL_GetAudioDeviceName(i, 0));
-    }
+		sdlDeviceID = 0;
 
-	sdlDeviceID = 0;
+		if (!deviceName.empty()) {
+			LOG("[Sound::%s] opening configured device \"%s\"", __func__, deviceName.c_str());
+			sdlDeviceID = SDL_OpenAudioDevice(deviceName.c_str(), 0, &desiredSpec, &obtainedSpec, SDL_AUDIO_ALLOW_ANY_CHANGE & ~SDL_AUDIO_ALLOW_CHANNELS_CHANGE);
+			selectedDeviceName = deviceName;
+		}
 
-	if (!deviceName.empty()) {
-		LOG("[Sound::%s] opening configured device \"%s\"", __func__, deviceName.c_str());
-		sdlDeviceID = SDL_OpenAudioDevice(deviceName.c_str(), 0, &desiredSpec, &obtainedSpec, SDL_AUDIO_ALLOW_ANY_CHANGE);
-		selectedDeviceName = deviceName;
-	}
+		if (sdlDeviceID == 0) {
+			LOG("[Sound::%s] opening default device", __func__);
+			sdlDeviceID = SDL_OpenAudioDevice(nullptr, 0, &desiredSpec, &obtainedSpec, SDL_AUDIO_ALLOW_ANY_CHANGE & ~SDL_AUDIO_ALLOW_CHANNELS_CHANGE);
+			selectedDeviceName = "default";
+		}
 
-	if (sdlDeviceID == 0) {
-		LOG("[Sound::%s] opening default device", __func__);
-		sdlDeviceID = SDL_OpenAudioDevice(nullptr, 0, &desiredSpec, &obtainedSpec, SDL_AUDIO_ALLOW_ANY_CHANGE);
-		selectedDeviceName = "default";
+		if (obtainedSpec.channels == desiredSpec.channels) {
+			break;
+		}
+
+		LOG("[Sound::%s] SDL returned %d channels, when we asked for %d. Closing previously opened device.", __func__, obtainedSpec.channels, desiredSpec.channels);
+		SDL_CloseAudioDevice(sdlDeviceID);
 	}
 
 	if (sdlDeviceID == 0) {
@@ -651,16 +667,11 @@ void CSound::InitThread(int cfgMaxSounds)
 			// LOG("  Implementation: %s", (const char*) alcGetString(curDevice, ALC_DEVICE_SPECIFIER));
 			LOG("  Devices:");
 
-			const bool hasAllEnumExt = alcIsExtensionPresent(nullptr, "ALC_ENUMERATE_ALL_EXT");
-			const bool hasDefEnumExt = alcIsExtensionPresent(nullptr, "ALC_ENUMERATION_EXT");
+			std::vector<std::string> devices = GetSoundDevices();
 
-			if (hasAllEnumExt || hasDefEnumExt) {
-				const char* deviceSpecStr = alcGetString(nullptr, hasAllEnumExt? ALC_ALL_DEVICES_SPECIFIER: ALC_DEVICE_SPECIFIER);
-
-				while (*deviceSpecStr != '\0') {
-					LOG("    [%s]", deviceSpecStr);
-					while (*deviceSpecStr++ != '\0');
-				}
+			if (devices.size()) {
+				for(const std::string& deviceName: devices)
+					LOG("    [%s]", deviceName.c_str());
 			} else {
 				LOG("    [N/A]");
 			}
@@ -809,7 +820,7 @@ void CSound::UpdateListenerReal()
 	float3 velocityAvg = velocity * 0.6f + prevVelocity * 0.4f;
 	prevVelocity = velocityAvg;
 	velocityAvg *= ELMOS_TO_METERS;
-	velocityAvg.y *= 0.001f; //! scale vertical axis separatly (zoom with mousewheel is faster than speed of sound!)
+	velocityAvg.y *= 0.001f; //! scale vertical axis separately (zoom with mousewheel is faster than speed of sound!)
 	velocityAvg *= 0.15f;
 	alListener3f(AL_VELOCITY, velocityAvg.x, velocityAvg.y, velocityAvg.z);
 	*/
@@ -1025,7 +1036,7 @@ void CSound::GenSources(int alMaxSounds)
 	for (int i = 0; i < alMaxSounds; i++) {
 		soundSources.emplace_back();
 
-		if (soundSources[i].IsValid())
+		if (soundSources.back().IsValid())
 			continue;
 
 		soundSources.pop_back();
@@ -1036,3 +1047,20 @@ void CSound::GenSources(int alMaxSounds)
 	}
 }
 
+std::vector<std::string> CSound::GetSoundDevices()
+{
+	std::vector<std::string> devices;
+	const bool hasAllEnumExt = alcIsExtensionPresent(nullptr, "ALC_ENUMERATE_ALL_EXT");
+	const bool hasDefEnumExt = alcIsExtensionPresent(nullptr, "ALC_ENUMERATION_EXT");
+
+	if (hasAllEnumExt || hasDefEnumExt) {
+		const char* deviceSpecStr = alcGetString(nullptr, hasAllEnumExt? ALC_ALL_DEVICES_SPECIFIER: ALC_DEVICE_SPECIFIER);
+
+		while (*deviceSpecStr != '\0') {
+			devices.emplace_back(deviceSpecStr);
+
+			while (*deviceSpecStr++ != '\0');
+		}
+	}
+	return devices;
+}

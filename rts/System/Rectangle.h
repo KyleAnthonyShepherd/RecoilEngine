@@ -27,11 +27,14 @@ struct SRectangle {
 	int GetHeight() const { return z2 - z1; }
 	int GetArea() const { return (GetWidth() * GetHeight()); }
 
+	int OverlapArea(SRectangle&& with) const;
+	int OverlapArea(const SRectangle& with) const;
+
 	bool Inside(const int2 pos) const {
 		// note: *min inclusive, *max exclusive
-		const bool xb = (pos.x >= x1 && pos.x < x2);
-		const bool yb = (pos.y >= y1 && pos.y < y2);
-		return (xb && yb);
+		return
+			(pos.x >= x1 && pos.x < x2) &&
+			(pos.y >= y1 && pos.y < y2);
 	}
 
 	//rect inside *this
@@ -49,15 +52,15 @@ struct SRectangle {
 	}
 
 	void ClampPos(int2* pos) const {
-		pos->x = Clamp(pos->x, x1, x2);
-		pos->y = Clamp(pos->y, y1, y2);
+		pos->x = std::clamp(pos->x, x1, x2);
+		pos->y = std::clamp(pos->y, y1, y2);
 	}
 
 	void ClampIn(const SRectangle& rect) {
-		x1 = Clamp(x1, rect.x1, rect.x2);
-		x2 = Clamp(x2, rect.x1, rect.x2);
-		y1 = Clamp(y1, rect.y1, rect.y2);
-		y2 = Clamp(y2, rect.y1, rect.y2);
+		x1 = std::clamp(x1, rect.x1, rect.x2);
+		x2 = std::clamp(x2, rect.x1, rect.x2);
+		y1 = std::clamp(y1, rect.y1, rect.y2);
+		y2 = std::clamp(y2, rect.y1, rect.y2);
 	}
 
 	bool CheckOverlap(const SRectangle& rect) const {

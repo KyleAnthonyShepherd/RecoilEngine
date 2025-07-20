@@ -46,6 +46,8 @@
 #include "System/StringUtil.h"
 #include "System/Sound/ISoundChannels.h"
 
+#include "System/Misc/TracyDefs.h"
+
 #endif
 
 CR_BIND_INTERFACE(CUnitScript)
@@ -54,6 +56,7 @@ CR_REG_METADATA(CUnitScript, (
 	CR_MEMBER(unit),
 	CR_MEMBER(busy),
 	CR_MEMBER(anims),
+	CR_MEMBER(doneAnims),
 
 	//Populated by children
 	CR_IGNORED(pieces),
@@ -168,60 +171,102 @@ bool CUnitScript::DoSpin(float& cur, float dest, float& speed, float accel, int 
 	return false;
 }
 
+/**
+ * @brief The multithreaded first half of the original CUnitScript::Tick function first does the heavy lifting of calculating all
+			  new piece positions according to the animations
+*/
+void CUnitScript::TickAllAnims(int deltaTime)
+{
+	ZoneScoped;
 
+	// tick-functions; these never change address
+	static constexpr std::array<TickAnimFunc, ACount> TICK_ANIM_FUNCS = { &CUnitScript::TickTurnAnim, &CUnitScript::TickSpinAnim, &CUnitScript::TickMoveAnim };
 
-void CUnitScript::TickAnims(int tickRate, const TickAnimFunc& tickAnimFunc, AnimContainerType& liveAnims, AnimContainerType& doneAnims) {
-	for (size_t i = 0; i < liveAnims.size(); ) {
-		AnimInfo& ai = liveAnims[i];
-		LocalModelPiece& lmp = *pieces[ai.piece];
+	const int tickRate = 1000 / deltaTime;
 
-		if ((ai.done |= (this->*tickAnimFunc)(tickRate, lmp, ai))) {
-			if (ai.hasWaiting)
-				doneAnims.push_back(ai);
+	for (int animType = ATurn; animType < ACount; animType++) {
+		auto& currAnims = anims[animType];
+		const auto& currFunc = TICK_ANIM_FUNCS[animType];
+		auto& currDoneAnims = doneAnims[animType];
 
-			ai = liveAnims.back();
-			liveAnims.pop_back();
-			continue;
+		for (size_t i = 0; i < currAnims.size(); ) {
+			AnimInfo& ai = currAnims[i];
+			LocalModelPiece& lmp = *pieces[ai.piece];
+
+			if ((ai.done |= std::invoke(currFunc, this, tickRate, lmp, ai))) {
+				if (ai.hasWaiting)
+					currDoneAnims.emplace_back(ai);
+
+				ai = std::move(currAnims.back());
+				currAnims.pop_back();
+				continue;
+			}
+
+			++i;
 		}
-
-		++i;
 	}
 }
 
 /**
- * @brief Called by the engine when we are registered as animating.
-          If we return false there are no active animations left.
- * @param deltaTime int delta time to update
- * @return true if there are still active animations
- */
-bool CUnitScript::Tick(int deltaTime)
+* @brief The single threaded second half of this function does the removal of finished animations,
+		and it also is responsible for unblocking the listeners and returning whether we have animations or not.
+		This is not multi threaded as it guarantees that AnimFinished will be called in consistent order for
+		all anims for all participants of the simulation, and guarantees that the order of the animating
+		vector in CUnitScriptEngine::Tick is preserved.
+* @param deltaTime int delta time to update
+* @return true if there are still active animations
+*/
+bool CUnitScript::TickAnimFinished(int deltaTime)
 {
-	// vector of indexes of finished animations,
-	// so we can get rid of them in constant time
-	static AnimContainerType doneAnims[AMove + 1];
-	// tick-functions; these never change address
-	static constexpr TickAnimFunc tickAnimFuncs[AMove + 1] = {&CUnitScript::TickTurnAnim, &CUnitScript::TickSpinAnim, &CUnitScript::TickMoveAnim};
-
-	for (int animType = ATurn; animType <= AMove; animType++) {
-		TickAnims(1000 / deltaTime, tickAnimFuncs[animType], anims[animType], doneAnims[animType]);
-	}
+	ZoneScoped;
 
 	// Tell listeners to unblock, and remove finished animations from the unit/script.
 	for (int animType = ATurn; animType <= AMove; animType++) {
-		for (AnimInfo& ai: doneAnims[animType]) {
-			AnimFinished((AnimType) animType, ai.piece, ai.axis);
-		}
+		auto& currDoneAnims = doneAnims[animType];
+		for (const auto& ai : currDoneAnims)
+			AnimFinished(static_cast<AnimType>(animType), ai.piece, ai.axis);
 
-		doneAnims[animType].clear();
+		currDoneAnims.clear();
 	}
 
 	return (HaveAnimations());
 }
 
+bool CUnitScript::TickMoveAnim(int tickRate, LocalModelPiece& lmp, AnimInfo& ai)
+{
+	float3 pos = lmp.GetPosition();
+	const bool ret = MoveToward(pos[ai.axis], ai.dest, ai.speed / tickRate);
+	lmp.SetPosition(pos);
+	lmp.SetPositionNoInterpolation(false);
 
+	return ret;
+}
+
+bool CUnitScript::TickTurnAnim(int tickRate, LocalModelPiece& lmp, AnimInfo& ai)
+{
+	float3 rot = lmp.GetRotation();
+	rot[ai.axis] = ClampRad(rot[ai.axis]);
+	const bool ret = TurnToward(rot[ai.axis], ai.dest, ai.speed / tickRate);
+	lmp.SetRotation(rot);
+	lmp.SetRotationNoInterpolation(false);
+
+	return ret;
+}
+
+bool CUnitScript::TickSpinAnim(int tickRate, LocalModelPiece& lmp, AnimInfo& ai)
+{
+	float3 rot = lmp.GetRotation();
+	rot[ai.axis] = ClampRad(rot[ai.axis]);
+	const bool ret = DoSpin(rot[ai.axis], ai.dest, ai.speed, ai.accel, tickRate);
+	lmp.SetRotation(rot);
+	lmp.SetRotationNoInterpolation(false);
+
+	return ret;
+}
 
 CUnitScript::AnimContainerTypeIt CUnitScript::FindAnim(AnimType type, int piece, int axis)
 {
+	RECOIL_DETAILED_TRACY_ZONE;
 	const auto& pred = [&](const AnimInfo& ai) { return (ai.piece == piece && ai.axis == axis); };
 	const auto& iter = std::find_if(anims[type].begin(), anims[type].end(), pred);
 	return iter;
@@ -229,6 +274,7 @@ CUnitScript::AnimContainerTypeIt CUnitScript::FindAnim(AnimType type, int piece,
 
 void CUnitScript::RemoveAnim(AnimType type, const AnimContainerTypeIt& animInfoIt)
 {
+	RECOIL_DETAILED_TRACY_ZONE;
 	if (animInfoIt == anims[type].end())
 		return;
 
@@ -256,6 +302,7 @@ void CUnitScript::RemoveAnim(AnimType type, const AnimContainerTypeIt& animInfoI
 //Other option would be to kill them. Or perhaps unblock them.
 void CUnitScript::AddAnim(AnimType type, int piece, int axis, float speed, float dest, float accel)
 {
+	RECOIL_DETAILED_TRACY_ZONE;
 	if (!PieceExists(piece)) {
 		ShowUnitScriptError("[US::AddAnim] invalid script piece index");
 		return;
@@ -326,6 +373,7 @@ void CUnitScript::AddAnim(AnimType type, int piece, int axis, float speed, float
 
 void CUnitScript::Spin(int piece, int axis, float speed, float accel)
 {
+	RECOIL_DETAILED_TRACY_ZONE;
 	auto animInfoIt = FindAnim(ASpin, piece, axis);
 
 	// if we are already spinning, we may have to decelerate to the new speed
@@ -336,7 +384,7 @@ void CUnitScript::Spin(int piece, int axis, float speed, float accel)
 		if (accel > 0.0f) {
 			ai->accel = accel;
 		} else {
-			// Go there instantly. Or have a defaul accel?
+			// Go there instantly. Or have a default accel?
 			ai->speed = speed;
 			ai->accel = 0.0f;
 		}
@@ -355,6 +403,7 @@ void CUnitScript::Spin(int piece, int axis, float speed, float accel)
 
 void CUnitScript::StopSpin(int piece, int axis, float decel)
 {
+	RECOIL_DETAILED_TRACY_ZONE;
 	auto animInfoIt = FindAnim(ASpin, piece, axis);
 
 	if (decel <= 0.0f) {
@@ -372,18 +421,21 @@ void CUnitScript::StopSpin(int piece, int axis, float decel)
 
 void CUnitScript::Turn(int piece, int axis, float speed, float destination)
 {
-	AddAnim(ATurn, piece, axis, std::max(speed, -speed), destination, 0);
+	RECOIL_DETAILED_TRACY_ZONE;
+	AddAnim(ATurn, piece, axis, math::fabs(speed), ClampRad(destination), 0);
 }
 
 
 void CUnitScript::Move(int piece, int axis, float speed, float destination)
 {
-	AddAnim(AMove, piece, axis, std::max(speed, -speed), destination, 0);
+	RECOIL_DETAILED_TRACY_ZONE;
+	AddAnim(AMove, piece, axis, math::fabs(speed), destination, 0);
 }
 
 
 void CUnitScript::MoveNow(int piece, int axis, float destination)
 {
+	RECOIL_DETAILED_TRACY_ZONE;
 	if (!PieceExists(piece)) {
 		ShowUnitScriptError("[US::MoveNow] invalid script piece index");
 		return;
@@ -397,16 +449,18 @@ void CUnitScript::MoveNow(int piece, int axis, float destination)
 	pos[axis] = ofs[axis] + destination;
 
 	p->SetPosition(pos);
+	p->SetPositionNoInterpolation(true);
 }
 
 
 void CUnitScript::TurnNow(int piece, int axis, float destination)
 {
+	RECOIL_DETAILED_TRACY_ZONE;
 	if (!PieceExists(piece)) {
 		ShowUnitScriptError("[US::TurnNow] invalid script piece index");
 		return;
 	}
-	destination = math::fmod(destination, math::TWOPI);
+	destination = ClampRad(destination);
 
 	LocalModelPiece* p = pieces[piece];
 
@@ -414,11 +468,13 @@ void CUnitScript::TurnNow(int piece, int axis, float destination)
 	rot[axis] = destination;
 
 	p->SetRotation(rot);
+	p->SetRotationNoInterpolation(true);
 }
 
 
 void CUnitScript::SetVisibility(int piece, bool visible)
 {
+	RECOIL_DETAILED_TRACY_ZONE;
 	if (!PieceExists(piece)) {
 		ShowUnitScriptError("[US::SetVisibility] invalid script piece index");
 		return;
@@ -430,6 +486,7 @@ void CUnitScript::SetVisibility(int piece, bool visible)
 
 bool CUnitScript::EmitSfx(int sfxType, int sfxPiece)
 {
+	RECOIL_DETAILED_TRACY_ZONE;
 #ifndef _CONSOLE
 	if (!PieceExists(sfxPiece)) {
 		ShowUnitScriptError("[US::EmitSFX] invalid script piece index");
@@ -450,12 +507,14 @@ bool CUnitScript::EmitSfx(int sfxType, int sfxPiece)
 
 bool CUnitScript::EmitRelSFX(int sfxType, const float3& relPos, const float3& relDir)
 {
+	RECOIL_DETAILED_TRACY_ZONE;
 	// convert piece-space {pos,dir} to unit-space
 	return (EmitAbsSFX(sfxType, unit->GetObjectSpacePos(relPos), unit->GetObjectSpaceVec(relDir), relDir));
 }
 
 bool CUnitScript::EmitAbsSFX(int sfxType, const float3& absPos, const float3& absDir, const float3& relDir)
 {
+	RECOIL_DETAILED_TRACY_ZONE;
 	// skip adding (non-CEG) particles when we have too many
 	if (sfxType < SFX_CEG && projectileHandler.GetParticleSaturation() > 1.0f)
 		return false;
@@ -551,13 +610,31 @@ bool CUnitScript::EmitAbsSFX(int sfxType, const float3& absPos, const float3& ab
 			if ((sfxType & SFX_GLOBAL) != 0) {
 				// emit defined explosion-generator (can only be custom, not standard)
 				// index is made valid by callee, an ID of -1 means CEG failed to load
-				explGenHandler.GenExplosion(sfxType - SFX_GLOBAL, absPos, absDir, unit->cegDamage, 1.0f, 0.0f, unit, nullptr);
+				explGenHandler.GenExplosion(
+					sfxType - SFX_GLOBAL,
+					absPos,
+					absDir,
+					unit->cegDamage,
+					1.0f,
+					0.0f,
+					unit,
+					ExplosionHitObject()
+				);
 				return true;
 			}
 			if ((sfxType & SFX_CEG) != 0) {
 				// emit defined explosion-generator (can only be custom, not standard)
 				// index is made valid by callee, an ID of -1 means CEG failed to load
-				explGenHandler.GenExplosion(ud->GetModelExpGenID(sfxType - SFX_CEG), absPos, absDir, unit->cegDamage, 1.0f, 0.0f, unit, nullptr);
+				explGenHandler.GenExplosion(
+					ud->GetModelExpGenID(sfxType - SFX_CEG),
+					absPos,
+					absDir,
+					unit->cegDamage,
+					1.0f,
+					0.0f,
+					unit,
+					ExplosionHitObject()
+				);
 				return true;
 			}
 
@@ -573,7 +650,11 @@ bool CUnitScript::EmitAbsSFX(int sfxType, const float3& absPos, const float3& ab
 				CWeapon* w = unit->weapons[index];
 
 				const SWeaponTarget origTarget = w->GetCurrentTarget();
-				const SWeaponTarget emitTarget = {absPos + absDir};
+
+				// Ideally the below should be absPos + absDir * w->range,
+				// but since the weapon could be a ballistic one, it's likely not safe.
+				// So keep the target one elmo in front of the emit position
+				const SWeaponTarget emitTarget = { absPos + absDir };
 
 				const float3 origWeaponMuzzlePos = w->weaponMuzzlePos;
 
@@ -582,8 +663,14 @@ bool CUnitScript::EmitAbsSFX(int sfxType, const float3& absPos, const float3& ab
 				w->Fire(true);
 				w->weaponMuzzlePos = origWeaponMuzzlePos;
 
-				const bool origRestored = w->Attack(origTarget);
-				assert(origRestored);
+				// the w->Fire(true); call above might have killed the same original target
+				// Drop the original target in such case, otherwise the weapon will
+				// continue to shoot at `emitTarget` and given how close it's to the emit point
+				// it will look like a random "ghosts" shooting
+				// See https://github.com/beyond-all-reason/spring/issues/1269
+				if (!w->Attack(origTarget))
+					w->DropCurrentTarget();
+
 				return true;
 			}
 
@@ -600,22 +687,22 @@ bool CUnitScript::EmitAbsSFX(int sfxType, const float3& absPos, const float3& ab
 				const WeaponDef* weaponDef = weapon->weaponDef;
 
 				const CExplosionParams params = {
-					absPos,
-					ZeroVector,
-					*weapon->damages,
-					weaponDef,
-					unit,                              // owner
-					nullptr,                           // hitUnit
-					nullptr,                           // hitFeature
-					weapon->damages->craterAreaOfEffect,
-					weapon->damages->damageAreaOfEffect,
-					weapon->damages->edgeEffectiveness,
-					weapon->damages->explosionSpeed,
-					1.0f,                              // gfxMod
-					weaponDef->impactOnly,
-					weaponDef->noSelfDamage,           // ignoreOwner
-					true,                              // damageGround
-					-1u                                // projectileID
+					.pos                  = absPos,
+					.dir                  = ZeroVector,
+					.damages              = *weapon->damages,
+					.weaponDef            = weaponDef,
+					.owner                = unit,
+					.hitObject            = ExplosionHitObject(),
+					.craterAreaOfEffect   = weapon->damages->craterAreaOfEffect,
+					.damageAreaOfEffect   = weapon->damages->damageAreaOfEffect,
+					.edgeEffectiveness    = weapon->damages->edgeEffectiveness,
+					.explosionSpeed       = weapon->damages->explosionSpeed,
+					.gfxMod               = 1.0f,
+					.maxGroundDeformation = 0.0f,
+					.impactOnly           = weaponDef->impactOnly,
+					.ignoreOwner          = weaponDef->noSelfDamage,
+					.damageGround         = true,
+					.projectileID         = static_cast<uint32_t>(-1u)
 				};
 
 				helper->Explosion(params);
@@ -629,6 +716,7 @@ bool CUnitScript::EmitAbsSFX(int sfxType, const float3& absPos, const float3& ab
 
 void CUnitScript::AttachUnit(int piece, int u)
 {
+	RECOIL_DETAILED_TRACY_ZONE;
 	// -1 is valid, indicates that the unit should be hidden
 	if ((piece >= 0) && (!PieceExists(piece))) {
 		ShowUnitScriptError("[US::AttachUnit] invalid script piece index");
@@ -648,6 +736,7 @@ void CUnitScript::AttachUnit(int piece, int u)
 
 void CUnitScript::DropUnit(int u)
 {
+	RECOIL_DETAILED_TRACY_ZONE;
 #ifndef _CONSOLE
 	CUnit* tgtUnit = unitHandler.GetUnit(u);
 
@@ -662,6 +751,7 @@ void CUnitScript::DropUnit(int u)
 //Returns true if there was an animation to listen to
 bool CUnitScript::NeedsWait(AnimType type, int piece, int axis)
 {
+	RECOIL_DETAILED_TRACY_ZONE;
 	auto animInfoIt = FindAnim(type, piece, axis);
 
 	if (animInfoIt == anims[type].end())
@@ -690,6 +780,7 @@ bool CUnitScript::NeedsWait(AnimType type, int piece, int axis)
 //Flags as defined by the cob standard
 void CUnitScript::Explode(int piece, int flags)
 {
+	RECOIL_DETAILED_TRACY_ZONE;
 	if (!PieceExists(piece)) {
 		ShowUnitScriptError("[US::Explode] invalid script piece index");
 		return;
@@ -747,6 +838,7 @@ void CUnitScript::Explode(int piece, int flags)
 
 void CUnitScript::Shatter(int piece, const float3& pos, const float3& speed)
 {
+	RECOIL_DETAILED_TRACY_ZONE;
 	const LocalModelPiece* lmp = pieces[piece];
 	const S3DModelPiece* omp = lmp->original;
 
@@ -763,6 +855,7 @@ void CUnitScript::Shatter(int piece, const float3& pos, const float3& speed)
 
 void CUnitScript::ShowFlare(int piece)
 {
+	RECOIL_DETAILED_TRACY_ZONE;
 	if (!PieceExists(piece)) {
 		ShowUnitScriptError("[US::ShowFlare] invalid script piece index");
 		return;
@@ -779,6 +872,7 @@ void CUnitScript::ShowFlare(int piece)
 /******************************************************************************/
 int CUnitScript::GetUnitVal(int val, int p1, int p2, int p3, int p4)
 {
+	RECOIL_DETAILED_TRACY_ZONE;
 	// may happen in case one uses Spring.GetUnitCOBValue (Lua) on a unit with CNullUnitScript
 	if (unit == nullptr) {
 		ShowUnitScriptError("[US::GetUnitVal] invoked for null-scripted unit");
@@ -1172,9 +1266,9 @@ int CUnitScript::GetUnitVal(int val, int p1, int p2, int p3, int p4)
 
 		if (u->beingBuilt) {
 			// no explosions and no corpse for units under construction
-			u->KillUnit(nullptr, false, true);
+			u->KillUnit(nullptr, false, true, -CSolidObject::DAMAGE_UNIT_SCRIPT);
 		} else {
-			u->KillUnit(nullptr, p2 != 0, p3 != 0);
+			u->KillUnit(nullptr, p2 != 0, p3 != 0, -CSolidObject::DAMAGE_UNIT_SCRIPT);
 		}
 
 		return 1;
@@ -1299,6 +1393,7 @@ int CUnitScript::GetUnitVal(int val, int p1, int p2, int p3, int p4)
 
 void CUnitScript::SetUnitVal(int val, int param)
 {
+	RECOIL_DETAILED_TRACY_ZONE;
 	// may happen in case one uses Spring.SetUnitCOBValue (Lua) on a unit with CNullUnitScript
 	if (unit == nullptr) {
 		ShowUnitScriptError("[US::SetUnitVal] invoked for null-scripted unit");
@@ -1540,6 +1635,7 @@ void CUnitScript::SetUnitVal(int val, int param)
 /******************************************************************************/
 
 int CUnitScript::ScriptToModel(int scriptPieceNum) const {
+	RECOIL_DETAILED_TRACY_ZONE;
 	if (!PieceExists(scriptPieceNum))
 		return -1;
 
@@ -1549,6 +1645,7 @@ int CUnitScript::ScriptToModel(int scriptPieceNum) const {
 }
 
 int CUnitScript::ModelToScript(int lmodelPieceNum) const {
+	RECOIL_DETAILED_TRACY_ZONE;
 	LocalModel& lm = unit->localModel;
 
 	if (!lm.HasPiece(lmodelPieceNum))
@@ -1561,6 +1658,7 @@ int CUnitScript::ModelToScript(int lmodelPieceNum) const {
 
 void CUnitScript::ShowUnitScriptError(const std::string& error)
 {
+	RECOIL_DETAILED_TRACY_ZONE;
 	if (unit == nullptr) {
 		ShowScriptError("unitID=null error=\"" + error + "\"");
 	} else {

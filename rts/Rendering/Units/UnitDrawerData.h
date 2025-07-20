@@ -6,7 +6,6 @@
 #include "Rendering/UnitDefImage.h"
 #include "Game/GlobalUnsynced.h"
 
-struct SolidObjectGroundDecal;
 struct S3DModel;
 class CUnitDrawer;
 struct UnitDef;
@@ -26,16 +25,18 @@ public:
 	const S3DModel* GetModel() const;
 	void PostLoad();
 public:
-	SolidObjectGroundDecal* decal; //FIXME defined in legacy decal handler with a lot legacy stuff
 	std::string modelName;
 
 	float3 pos;
+	float3 midPos;
 	float3 dir;
+	float radius;
+	float iconRadius;
 
 	int facing; //FIXME replaced with dir-vector just legacy decal drawer uses this
 	uint8_t team;
 	int refCount;
-	int lastDrawFrame;
+	icon::CIconData* myIcon;
 private:
 	mutable const S3DModel* model;
 };
@@ -63,6 +64,9 @@ public:
 	void UnitLeftLos(const CUnit* unit, int allyTeam) override;
 
 	void PlayerChanged(int playerNum) override;
+	bool UpdateUnitGhosts(const CUnit* unit, const bool addNewGhost);
+	void UnitLeavesGhostChanged(const CUnit* unit, const bool leaveDeadGhost);
+	void ReviewPrevLos(const CUnit* unit);
 public:
 	class TempDrawUnit {
 		CR_DECLARE_STRUCT(TempDrawUnit)
@@ -143,7 +147,7 @@ public:
 	auto*       GetSavedData()       { return &savedData; }
 	const auto* GetSavedData() const { return &savedData; }
 
-	const spring::unsynced_map<icon::CIconData*, std::vector<const CUnit*> >& GetUnitsByIcon() const { return unitsByIcon; }
+	const spring::unsynced_map<icon::CIconData*, std::pair<std::vector<const CUnit*>, std::vector<const GhostSolidObject*> > >& GetUnitsByIcon() const { return unitsByIcon; }
 protected:
 	void UpdateObjectDrawFlags(CSolidObject* o) const override;
 private:
@@ -160,12 +164,13 @@ private:
 	bool DrawAsIconByDistance(const CUnit* unit, const float sqUnitCamDist) const;
 	//bool DrawAsIconScreen(CUnit* unit) const;
 public:
-	// lenghts & distances
+	// lengths & distances
 	float unitIconDist;
 	float iconLength;
 
 	//icons
 	bool iconHideWithUI = true;
+	float ghostIconDimming = 0.5f;
 
 	// IconsAsUI
 	bool useScreenIcons = false;
@@ -174,13 +179,17 @@ public:
 	float iconScale = 1.0f;
 	float iconFadeStart = 3000.0f;
 	float iconFadeVanish = 1000.0f;
+
+	void ConfigNotify(const std::string& key, const std::string& value);
 private:
 	SavedData savedData;
 
-	spring::unsynced_map<icon::CIconData*, std::vector<const CUnit*> > unitsByIcon;
+	spring::unsynced_map<icon::CIconData*, std::pair<std::vector<const CUnit*>, std::vector<const GhostSolidObject*> > > unitsByIcon;
 
 	std::vector<UnitDefImage> unitDefImages;
 
+	S3DModel* GetUnitModel(const CUnit* unit) const;
+	void RemoveDeadGhost(GhostSolidObject* gso, std::vector<GhostSolidObject*>& dgb, int index);
 
 
 	// icons

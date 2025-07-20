@@ -1,25 +1,27 @@
 # Recoil is an open source real time strategy game engine
 
+Visit the [Official Website](https://beyond-all-reason.github.io/RecoilEngine/)
+
 ### Get the engine sources
 
-    git clone https://github.com/beyond-all-reason/spring -b BAR105 --recursive
+    git clone https://github.com/beyond-all-reason/RecoilEngine --recursive
 
 Recoil is a fork and continuation of an RTS [engine](https://github.com/spring/spring) version 105.0
 
-Visit our [Discord](https://discord.gg/GUpRg6Wz3e) or [Matrix](https://matrix.to/#/#beyond-all-reason-engine:matrix.org) for help, suggestions, bugs, community forum and everything Recoil related.
+Visit our [Discord](https://discord.gg/GUpRg6Wz3e) for help, suggestions, bugs, community forum and everything Recoil related.
 
 ### Installation
 
 You can use a pre-compiled binary, usually, you want to use an installer or a package prepared for your OS:
 
-* <https://github.com/beyond-all-reason/spring/releases>
+* <https://github.com/beyond-all-reason/RecoilEngine/releases>
 
 
 ### Compiling
 
-Detailed instructions for how to compile Recoil can be found [here](https://github.com/beyond-all-reason/spring/wiki/Building-and-developing-engine-without-docker) or [here](https://github.com/beyond-all-reason/spring/wiki/SpringRTS-Build-Environment-(Docker))
+Detailed instructions for how to compile Recoil can be found [here](https://github.com/beyond-all-reason/RecoilEngine/wiki/Building-and-developing-engine-without-docker) or [here](https://github.com/beyond-all-reason/RecoilEngine/wiki/SpringRTS-Build-Environment-(Docker))
 
-Use `BAR105` as the primary branch.
+Use `master` as the primary branch.
 
 Verify you're seeing tags:
 
@@ -37,21 +39,22 @@ spring_bar_{BAR105}105.1.1-1050-g5075cc0
 If you aren't seeeing these (often, when you've cloned your fork of the repository and not the upstream version), try the following:
 
 ```bash
-git remote add upstream git@github.com:beyond-all-reason/spring.git
+git remote add upstream git@github.com:beyond-all-reason/RecoilEngine.git
 git fetch --all --tags
 ```
 
-Check out the BAR105 branch in this case:
+Make sure `master` is pointing to upstream `master`:
 
 ```bash
-git checkout upstream/BAR105 -b BAR105
+git checkout master
+git branch -u upstream/master
 ```
 
 The most simple set of commands will be:
 
 ```bash
 cmake .
-make
+ninja
 ```
 
 ### License

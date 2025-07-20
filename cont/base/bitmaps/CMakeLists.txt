@@ -14,10 +14,10 @@ set(FILES
 	bitmaps/armsilo1.bmp
 	bitmaps/birch1.bmp
 	bitmaps/button.bmp
-	bitmaps/scars/scar2.bmp
-	bitmaps/scars/scar4.bmp
-	bitmaps/scars/scar1.bmp
-	bitmaps/scars/scar3.bmp
+	bitmaps/scars/scar1.tga
+	bitmaps/scars/scar1_normal.tga
+	bitmaps/scars/scar2.tga
+	bitmaps/scars/scar2_normal.tga
 	bitmaps/laserfalloff.tga
 	bitmaps/emptyBuildPane.bmp
 	bitmaps/detailtex.bmp
@@ -33,6 +33,7 @@ set(FILES
 	bitmaps/circles.tga
 	bitmaps/explo.tga
 	bitmaps/waterbump.png
+	bitmaps/waterbump_4tiles.dds
 	bitmaps/groundring.tga
 	bitmaps/guiicon_move.bmp
 	bitmaps/detailtex2.bmp

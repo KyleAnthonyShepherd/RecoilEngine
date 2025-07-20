@@ -14,8 +14,10 @@ if [ "${PLATFORM}" == "linux-64" ]; then
         -DBINDIR:PATH=./
         -DLIBDIR:PATH=./
         -DDATADIR:PATH=./
-        -DMANDIR:PATH=share/man
         -DDOCDIR:PATH=doc
+        -DCMAKE_EXE_LINKER_FLAGS_INIT="-fuse-ld=gold"
+        -DCMAKE_MODULE_LINKER_FLAGS_INIT="-fuse-ld=gold"
+        -DCMAKE_SHARED_LINKER_FLAGS_INIT="-fuse-ld=gold"
     )
     export PKG_CONFIG_LIBDIR=${LIBS_DIR}/lib/pkgconfig
     export PKG_CONFIG="pkg-config --define-prefix --static"
@@ -45,7 +47,6 @@ cmake \
     -DCMAKE_INSTALL_PREFIX:PATH="${INSTALL_DIR}" \
     -DUSERDOCS_PLAIN=ON \
     -DINSTALL_PORTABLE=ON \
-    -DWITH_MAPCOMPILER=OFF \
     -DAI_EXCLUDE_REGEX="^CppTestAI$" \
     "${MYCMAKEFLAGS}" \
     "${EXTRA_CMAKE_ARGS[@]}" \

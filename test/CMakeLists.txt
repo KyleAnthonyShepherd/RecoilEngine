@@ -15,6 +15,8 @@ else  (UNIX AND (NOT APPLE) AND (NOT MINGW))
 	set(REALTIME_LIBRARY "")
 endif (UNIX AND (NOT APPLE) AND (NOT MINGW))
 
+ADD_SUBDIRECTORY(lib/catch2)
+
 include_directories(${CMAKE_BINARY_DIR}/src-generated/engine)
 
 set(ENGINE_SOURCE_DIR "${CMAKE_SOURCE_DIR}/rts")
@@ -51,7 +53,8 @@ set(test_Log_sources
 	)
 
 set(test_common_libraries
-	cpuid
+	Tracy::TracyClient
+	Catch2
 )
 
 add_custom_target(tests)
@@ -99,6 +102,7 @@ if(NOT DEFINED ENV{CI})
 		${WINMM_LIBRARY}
 		${WS2_32_LIBRARY}
 		7zip
+		streflop
 	)
 
 	add_spring_test(${test_name} "${test_src}" "${test_libs}" "")
@@ -158,7 +162,6 @@ endif()
 			"${ENGINE_SOURCE_DIR}/System/float3.cpp"
 			"${ENGINE_SOURCE_DIR}/System/float4.cpp"
 			"${ENGINE_SOURCE_DIR}/System/Misc/SpringTime.cpp"
-			"${ENGINE_SOURCE_DIR}/System/StringHash.cpp"
 			"${ENGINE_SOURCE_DIR}/System/TimeProfiler.cpp"
 			${sources_engine_System_Threading}
 			${test_Log_sources}
@@ -178,7 +181,6 @@ endif()
 			"${ENGINE_SOURCE_DIR}/System/Matrix44f.cpp"
 			"${ENGINE_SOURCE_DIR}/System/float3.cpp"
 			"${ENGINE_SOURCE_DIR}/System/float4.cpp"
-			"${ENGINE_SOURCE_DIR}/System/StringHash.cpp"
 			"${ENGINE_SOURCE_DIR}/System/TimeProfiler.cpp"
 			"${ENGINE_SOURCE_DIR}/System/Misc/SpringTime.cpp"
 			${sources_engine_System_Threading}
@@ -209,12 +211,30 @@ endif()
 	add_spring_test(${test_name} "${test_src}" "${test_libs}" "-DNOT_USING_CREG -DNOT_USING_STREFLOP -DBUILDING_AI")
 
 ################################################################################
+### Transform
+	set(test_name Transform)
+	set(test_src
+			"${CMAKE_CURRENT_SOURCE_DIR}/engine/System/testTransform.cpp"
+			"${ENGINE_SOURCE_DIR}/System/Matrix44f.cpp"
+			"${ENGINE_SOURCE_DIR}/System/Quaternion.cpp"
+			"${ENGINE_SOURCE_DIR}/System/Transform.cpp"
+			"${ENGINE_SOURCE_DIR}/System/float3.cpp"
+			"${ENGINE_SOURCE_DIR}/System/float4.cpp"
+			${test_Log_sources}
+		)
+
+	set(test_libs
+			${WINMM_LIBRARY}
+		)
+
+	add_spring_test(${test_name} "${test_src}" "${test_libs}" "-DNOT_USING_CREG -DNOT_USING_STREFLOP -DBUILDING_AI")
+
+################################################################################
 ### SpringTime
 	set(test_name SpringTime)
 	set(test_src
 			"${CMAKE_CURRENT_SOURCE_DIR}/engine/System/Misc/testSpringTime.cpp"
 			"${ENGINE_SOURCE_DIR}/System/Misc/SpringTime.cpp"
-			"${ENGINE_SOURCE_DIR}/System/StringHash.cpp"
 			"${ENGINE_SOURCE_DIR}/System/TimeProfiler.cpp"
 			${sources_engine_System_Threading}
 			${test_Log_sources}
@@ -268,8 +288,17 @@ endif()
 	set(test_libs
 			7zip
 		)
+	if (WIN32)
+		list(APPEND test_src "${ENGINE_SOURCE_DIR}/System/Platform/Win/WinVersion.cpp")
+		list(APPEND test_src "${ENGINE_SOURCE_DIR}/System/Platform/Win/Hardware.cpp")
+
+		list(APPEND test_libs ${IPHLPAPI_LIBRARY})
+	else (WIN32)
+		list(APPEND test_src "${ENGINE_SOURCE_DIR}/System/Platform/Linux/Hardware.cpp")
+	endif (WIN32)
 	add_spring_test(${test_name} "${test_src}" "${test_libs}" "")
 	add_dependencies(test_${test_name} generateVersionFiles)
+	include_directories("${ENGINE_SOURCE_DIR}/lib")
 ################################################################################
 ### LuaSocketRestrictions
 	set(test_name LuaSocketRestrictions)
@@ -329,6 +358,7 @@ endif()
 
 	set(test_flags "-DUNITSYNC")
 	add_spring_test(${test_name} "${test_src}" "${test_libs}" "${test_flags}")
+	target_include_directories(test_${test_name} PRIVATE ${ENGINE_SOURCE_DIR}/lib/)
 	add_dependencies(test_${test_name} springcontent.sdz)
 
 ################################################################################
@@ -339,11 +369,16 @@ endif()
 			"${ENGINE_SOURCE_DIR}/System/Threading/ThreadPool.cpp"
 			"${ENGINE_SOURCE_DIR}/System/Misc/SpringTime.cpp"
 			"${ENGINE_SOURCE_DIR}/System/Platform/CpuID.cpp"
+			"${ENGINE_SOURCE_DIR}/System/Platform/CpuTopologyCommon.cpp"
 			"${ENGINE_SOURCE_DIR}/System/Platform/Threading.cpp"
 			${sources_engine_System_Threading}
 			${test_Log_sources}
 		)
-
+	if (WIN32)
+		list(APPEND test_src "${ENGINE_SOURCE_DIR}/System/Platform/Win/CpuTopology.cpp")
+	else (WIN32)
+		list(APPEND test_src "${ENGINE_SOURCE_DIR}/System/Platform/Linux/CpuTopology.cpp")
+	endif (WIN32)
 	set(test_libs
 			${WINMM_LIBRARY}
 		)
@@ -360,7 +395,6 @@ endif()
 	set(test_src
 			"${CMAKE_CURRENT_SOURCE_DIR}/other/testMutex.cpp"
 			"${ENGINE_SOURCE_DIR}/System/Misc/SpringTime.cpp"
-			"${ENGINE_SOURCE_DIR}/System/StringHash.cpp"
 			"${ENGINE_SOURCE_DIR}/System/TimeProfiler.cpp"
 			${sources_engine_System_Threading}
 			${test_Log_sources}
@@ -402,35 +436,11 @@ endif()
 	add_spring_test(${test_name} "${test_src}" "${test_libs}" "${test_flags}")
 
 ################################################################################
-### Printf
-	set(test_name Printf)
-	set(test_src
-			"${CMAKE_CURRENT_SOURCE_DIR}/other/testPrintf.cpp"
-			"${ENGINE_SOURCE_DIR}/Lua/LuaMemPool.cpp"
-			"${ENGINE_SOURCE_DIR}/System/Misc/SpringTime.cpp"
-			"${ENGINE_SOURCE_DIR}/System/StringHash.cpp"
-			"${ENGINE_SOURCE_DIR}/System/TimeProfiler.cpp"
-			${sources_engine_System_Threading}
-			${test_Log_sources}
-		)
-	set(test_libs
-			streflop
-			lua
-			${WINMM_LIBRARY}
-			headlessStubs
-		)
-	set(test_flags "-DNOT_USING_CREG -DSTREFLOP_SSE -DBUILDING_AI")
-	add_spring_test(${test_name} "${test_src}" "${test_libs}" "${test_flags}")
-	target_include_directories(test_${test_name} PRIVATE ${ENGINE_SOURCE_DIR}/lib/lua/include)
-
-
-################################################################################
 ### SQRT
 	set(test_name SQRT)
 	set(test_src
 			"${CMAKE_CURRENT_SOURCE_DIR}/engine/System/testSQRT.cpp"
 			"${ENGINE_SOURCE_DIR}/System/Misc/SpringTime.cpp"
-			"${ENGINE_SOURCE_DIR}/System/StringHash.cpp"
 			"${ENGINE_SOURCE_DIR}/System/TimeProfiler.cpp"
 			${sources_engine_System_Threading}
 			${test_Log_sources}
@@ -471,9 +481,11 @@ endif()
 	set(test_libs
 			lua
 			headlessStubs
+			smmalloc
 		)
 	set(test_flags "-DNOT_USING_STREFLOP")
 	add_spring_test(${test_name} "${test_src}" "${test_libs}" "${test_flags}")
+	target_include_directories(test_${test_name} PRIVATE ${ENGINE_SOURCE_DIR}/lib/)
 	target_include_directories(test_${test_name} PRIVATE ${ENGINE_SOURCE_DIR}/lib/lua/include)
 
 ################################################################################
@@ -483,6 +495,9 @@ endif()
 			"${CMAKE_CURRENT_SOURCE_DIR}/other/testMemPoolTypes.cpp"
 			${test_Log_sources}
 		)
+	set(test_libs
+		smmalloc
+	)
 	add_spring_test(${test_name} "${test_src}" "${test_libs}" "${test_flags}")
 	target_include_directories(test_${test_name} PRIVATE ${ENGINE_SOURCE_DIR}/lib/)
 

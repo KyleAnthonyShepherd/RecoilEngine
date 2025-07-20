@@ -100,7 +100,7 @@ public:
 		if (args.empty()) {
 			gs->godMode = GODMODE_MAX_VAL - gs->godMode;
 		} else {
-			gs->godMode = Clamp(atoi(args.c_str()), 0, int(GODMODE_MAX_VAL));
+			gs->godMode = std::clamp(atoi(args.c_str()), 0, int(GODMODE_MAX_VAL));
 		}
 
 		CLuaUI::UpdateTeams();
@@ -213,7 +213,7 @@ public:
 			CUnit *unit = unitHandler.GetUnit(unitId);
 
 			if (unit != nullptr) {
-				unit->KillUnit(nullptr, false, !this->runDeathScript);
+				unit->KillUnit(nullptr, false, !this->runDeathScript, -CSolidObject::DAMAGE_KILLED_CHEAT);
 			} else {
 				LOG("[%s] Wrong unitID: %i", this->GetCommand().c_str(), unitId);
 			}
@@ -458,7 +458,7 @@ public:
 		ASSERT_SYNCED((short)(gu->myPlayerNum * 123 + 123));
 		//ASSERT_SYNCED(float3(gu->myPlayerNum, gu->myPlayerNum, gu->myPlayerNum));
 
-		// Command comming from the server won't match any of the client IDs.
+		// Command coming from the server won't match any of the client IDs.
 		int actionPlayerID = (action.GetPlayerID()==SERVER_PLAYER) ? 0 : action.GetPlayerID();
 
 		for (int i = unitHandler.MaxUnits() - 1; i >= 0; --i) {
@@ -486,17 +486,15 @@ public:
 
 class AtmActionExecutor : public ISyncedActionExecutor {
 public:
-	AtmActionExecutor() : ISyncedActionExecutor("Atm", "Gives 1000 metal and 1000 energy to the issuing player's team", true) {
+	AtmActionExecutor() : ISyncedActionExecutor("Atm", "Gives the specified amount (default 1000) of each resource to the issuing player's team", true) {
 	}
 
 	bool Execute(const SyncedAction& action) const final {
 		const std::string& args = action.GetArgs();
 
 		const int team = playerHandler.Player(action.GetPlayerID())->team;
-		const int amount = (args.empty())? 1000: std::atoi(args.c_str());
-
-		teamHandler.Team(team)->AddMetal(std::max(0, amount));
-		teamHandler.Team(team)->AddEnergy(std::max(0, amount));
+		const float amount = (args.empty())? 1000: std::max(0, std::atoi(args.c_str()));
+		teamHandler.Team(team)->AddResources(amount);
 		return true;
 	}
 };
