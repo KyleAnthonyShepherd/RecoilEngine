@@ -1384,7 +1384,7 @@ float CWeapon::GetSafeInterceptTime(const CUnit* unit, float predictMult) const
 	float predictTime = 0.0;
 	// goal here is to return the smallest positive solution to a quadratic formula
 	// while also being numerically stable
-	// We also know c is strictly positive.
+	// We also know cc (distance to target) is strictly positive.
 
 	// case 1, aa <0, target speed is less than projectile speed
 	// guaranteed existence of a positive solution
@@ -1464,7 +1464,7 @@ float CWeapon::GetAccuratePredictedImpactTime(const CUnit* unit) const
 			// d = (gravity)*(Y velocity of target)
 			// e = (1/4)*(downward gravity)^2
 			// 
-			// if reformulated as a fixed point iteration, by assuming a target position (setting velocity of target to zero), then odd coefficients drop so the equation becomes biquadratic. 
+			// if reformulated as a fixed point iteration, by assuming a target position (then setting velocity of target to zero), then odd coefficients drop so the equation becomes biquadratic. 
 			// https://en.wikipedia.org/wiki/Fixed-point_iteration
 			// f(t_n) = t_(n+1)
 			// 
@@ -1474,7 +1474,7 @@ float CWeapon::GetAccuratePredictedImpactTime(const CUnit* unit) const
 			// a = distance to target at time t_n
 			// c = -(projectile speed)^2 - (target vertical distance at time t_n)*(gravity)
 			// e = 0.25*(gravity)^2
-			// Our f(t_n) is the solved value of T to make a + c*T^2 + e*T^4 equal to 0.
+			// Our f(t_n) is the solved value of T to make [a + c*T^2 + e*T^4] equal to 0.
 			// (Fundamentally, this is a quadratic equation with 2 answers. Smaller answer is low trajectory solution. Larger answer is high trajectory solution)
 			// 
 			// we then use the new intercept time, t_(n+1), to calculate an updated target position,
@@ -1504,6 +1504,7 @@ float CWeapon::GetAccuratePredictedImpactTime(const CUnit* unit) const
 			// accurateLeading = 2 will almost alawys be 1 frame accurate.
 			// accurateLeading >=2 should rarely be a noticeable improvement. The code will break the iteration loop early once 1 frame accuracy is reached even if accurateLeading is large.
 
+			// Choose the negative or positive solution of the underlying quadratic based on if the unit desires to fire highTrajectory or low trajectory.
 			float highTrajectorySwitch = -1.0f;
 			if (weaponDef->highTrajectory == 1) {
 				highTrajectorySwitch = 1.0f;

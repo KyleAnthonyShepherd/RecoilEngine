@@ -62,8 +62,10 @@ UnitDefWeapon::UnitDefWeapon(const WeaponDef* weaponDef, const LuaTable& weaponT
 	// Determines how to handle burst fire, when target is out of arc. 0 = no restrictions (default), 1 = don't fire, 2 = fire in current direction of weapon 
 	burstControlWhenOutOfArc = weaponTable.GetInt("burstControlWhenOutOfArc", burstControlWhenOutOfArc);
 
-    // allow weapon to perform additional iterations when calculating target leading on a moving target, for better accuracy
-	// stops undershooting when firing at approaching or retreating enemies
+	// Perform more math to accurately lead moving targets. 
+	// 0 = undershoot approaching or retreating targets (default), 
+	// 1 = exact solution for non-parabolic shots and 1 accuracy iteration for parabolic shots, 
+	// 2 = one frame accuracy for almost all shots, 2+ = more iterations for more accuracy if needed.
 	accurateLeading = weaponTable.GetInt("accurateLeading", accurateLeading);
 }
 
