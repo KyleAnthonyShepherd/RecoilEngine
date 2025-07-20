@@ -114,7 +114,7 @@ CR_REG_METADATA(CWeapon, (
 	CR_MEMBER(weaponAimAdjustPriority),
 	CR_MEMBER(fastAutoRetargeting),
 	CR_MEMBER(fastQueryPointUpdate),
-	CR_MEMBER(accurateLeading)
+	CR_MEMBER(accurateLeading),
 	CR_MEMBER(burstControlWhenOutOfArc)
 ))
 
@@ -197,7 +197,7 @@ CWeapon::CWeapon(CUnit* owner, const WeaponDef* def):
 	weaponAimAdjustPriority(1.f),
 	fastAutoRetargeting(false),
 	fastQueryPointUpdate(false),
-	accurateLeading(false),
+	accurateLeading(0),
 	burstControlWhenOutOfArc(0)
 {
 	assert(weaponMemPool.alloced(this));
@@ -1444,7 +1444,7 @@ float CWeapon::GetSafeInterceptTime(const CUnit* unit, float predictMult) const
 float CWeapon::GetAccuratePredictedImpactTime(const CUnit* unit) const
 {
 	RECOIL_DETAILED_TRACY_ZONE;
-	const float predictTime = GetPredictedImpactTime(unit->pos);
+	float predictTime = GetPredictedImpactTime(unit->pos);
 	const float predictMult = mix(predictSpeedMod, 1.0f, weaponDef->predictBoost);
 	
 	// check if the weapon could be affected by gravity 
@@ -1456,23 +1456,38 @@ float CWeapon::GetAccuratePredictedImpactTime(const CUnit* unit) const
 			// precise target leading
 			// newton iterations of the raw quartic are too unstable, due to impossible to intercept targets, 
 			// and existence of low and high trajectory solutions
-			// if reformulated as a fixed point iteration, odd coefficients drop so the equation becomes biquadratic. 
+			// For completeness sake, the raw quartic is below:
+			// 0 = a+b*T+c*T^2+d*T^3+e*T^4
+			// a = (distance to target).dot(distance to target)
+			// b = 2*(distance to target).dot(velocity of target)
+			// c = (velocity of target).dot(velocity of target)+(gravity)*(target vertical distance)-(projectile speed)^2
+			// d = (gravity)*(Y velocity of target)
+			// e = (1/4)*(downward gravity)^2
+			// 
+			// if reformulated as a fixed point iteration, by assuming a target position (setting velocity of target to zero), then odd coefficients drop so the equation becomes biquadratic. 
 			// https://en.wikipedia.org/wiki/Fixed-point_iteration
-			// f(t_n) = t_n+1
-			// in our case, assuming a source position of [0, 0, 0], target position at time T, and projectile properties
-			// we can calculate time to intercept, f(t_n)
+			// f(t_n) = t_(n+1)
+			// 
+			// in our case, assuming a source position of [0, 0, 0], target position at assumed [guessed] time t_n, and assuming projectile properties
+			// we can calculate time to intercept, t_(n+1) [T for short]
 			// a + c*T^2 + e*T^4 = 0
 			// a = distance to target at time t_n
-			// c = -(projectile speed)^2 - (target vertical distance)*(gravity)
+			// c = -(projectile speed)^2 - (target vertical distance at time t_n)*(gravity)
 			// e = 0.25*(gravity)^2
-			// we use the new intercept time, t_n+1, to calculate an updated target position,
-			// and updated intercept time f(t_n+1)
-			// newton iterations of this fixed point intercept formula are stable
-			// f(t) - t = 0
-			// t_n+1 = t_n - (f(t_n) - t_n)/(df(t_n) - 1)
+			// Our f(t_n) is the solved value of T to make a + c*T^2 + e*T^4 equal to 0.
+			// (Fundamentally, this is a quadratic equation with 2 answers. Smaller answer is low trajectory solution. Larger answer is high trajectory solution)
+			// 
+			// we then use the new intercept time, t_(n+1), to calculate an updated target position,
+			// and updated intercept time f(t_(n+1)) = t_(n+2)
+			// 
+			// Iterating a few times will converge to a solution.
+			// But, to our advantage, newton iterations of this fixed point intercept formula can be stable
+			// f(T) - T = 0  // Essentially, we want to solve for time T when the fixed point iterations provides an update [improvement] of 0.
+			// t_n+1 = t_n - (f(t_n) - t_n)/(df(t_n) - 1)  //newton iteration formula, where df(t_n) is derivative of f(T) with respect to T.
 			// providing quadratic convergence instead of the naive fixed point linear convergence
-			// df(t_n) is a lot of divisions, a secant approximation is perfectly acceptable
-			// exact df(t_n), for reference
+			// 
+			// the exact df(t_n) formula is a lot of divisions, a secant approximation is perfectly acceptable
+			// exact df(t_n), for completeness sake
 			// const float vy = unit->speed.y;
 			// const float ddist = unit->speed.dot(unit->pos - weaponMuzzlePos);
 			// const float vt = unit->speed.dot(unit->speed);
@@ -1482,7 +1497,20 @@ float CWeapon::GetAccuratePredictedImpactTime(const CUnit* unit) const
 			//	* (vy * (gravity)
 			//		- (1 / (temp3)) * (ps2 * vy * (gravity) + predictTime * vy * vy * gg
 			//			- gg * (ddist + predictTime * vt)));
-			// At most 32 iterations are allowed, but mostly just 2 iterations are needed.
+			// 
+			// Mostly just 2 iterations are needed for 1 frame accuracy.
+			// Therefore, accurateLeading = 0 is default engine behavior
+			// accurateLeading = 1 is vastly improved accuracy. Exact solutions for non-gravity projectiles, and 1 iteration closer for gravity projectiles.
+			// accurateLeading = 2 will almost alawys be 1 frame accurate.
+			// accurateLeading >=2 should rarely be a noticeable improvement. The code will break the iteration loop early once 1 frame accuracy is reached even if accurateLeading is large.
+
+			float highTrajectorySwitch = -1.0f;
+			if (weaponDef->highTrajectory == 1) {
+				highTrajectorySwitch = 1.0f;
+			}
+			if (owner->useHighTrajectory) {
+				highTrajectorySwitch = 1.0f;
+			}
 
 			float3 dist = unit->pos + unit->speed * predictMult * predictTime - weaponMuzzlePos;
 			const float gg = (gravity) * (gravity);
@@ -1492,24 +1520,31 @@ float CWeapon::GetAccuratePredictedImpactTime(const CUnit* unit) const
 			float temp1 = 1.0f;
 			float temp2 = 1.0f;
 			float cc = 1.0f;
-			float deltatime = predictTime;
-			for (int ii = 0; ii < 32; ii++) {
+			float deltatime = predictTime; // First reasonable guess for impact time, from GetPredictedImpactTime
+			for (int ii = 0; ii < accurateLeading; ii++) {
+
+				if (deltatime < 1) {
+					// if impact is in less than 1 frame, break
+					// prevents a possible numeric explosion when calculating dt1 if deltatime is small 
+					break;
+				}
 
 				cc = -ps2 - dist.y * (gravity);
 				temp1 = (dist.dot(dist) * gg);
 				temp2 = (cc * cc);
 				if (temp1 >= temp2) {
-					// this triggers if the target cannot be intercepted
+					// this triggers if the target cannot be intercepted (imaginary solutions)
 					// units can get out of range before the slow projectile can hit it
+					// break and just return the default engine behavior GetPredictedImpactTime value
 					break;
 				}
 				//f(t_n)
-				t1 = math::sqrt((-cc - math::sqrt(temp2 - temp1)) / (0.5f * gg));
+				t1 = math::sqrt((-cc + highTrajectorySwitch * math::sqrt(temp2 - temp1)) / (0.5f * gg));
 
 				// secant approximation of df(t_n)
 				dt1 = (t1 - predictTime) / deltatime;
 
-				if (std::abs(dt1) < 1) {
+				if (std::abs(dt1 + SAFE_INTERCEPT_EPS) < 1) {
 					// abs(dt1) less than 1 means newton iteration is stable, and can be used
 					t1 = predictTime - (t1 - predictTime) / (dt1 - 1);
 				}
@@ -1553,8 +1588,9 @@ float3 CWeapon::GetLeadVec(const CUnit* unit) const
 {
 	const float predictMult = mix(predictSpeedMod, 1.0f, weaponDef->predictBoost);
 	float3 lead = unit->speed;
-	if (accurateLeading == true) {
-		float predictTime = GetPredictedImpactTime(unit->pos); // dummy func for now
+	if (accurateLeading > 0) {
+		//float predictTime = GetPredictedImpactTime(unit->pos); // dummy func for now
+		float predictTime = 1.0f;
 		predictTime = GetAccuratePredictedImpactTime(unit);
 		lead = unit->speed * predictTime * predictMult;
 	} else {
