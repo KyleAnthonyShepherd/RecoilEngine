@@ -115,7 +115,10 @@ CR_REG_METADATA(CWeapon, (
 	CR_MEMBER(fastAutoRetargeting),
 	CR_MEMBER(fastQueryPointUpdate),
 	CR_MEMBER(accurateLeading),
-	CR_MEMBER(burstControlWhenOutOfArc)
+	CR_MEMBER(burstControlWhenOutOfArc),
+
+	CR_MEMBER(targetIsBlocked),
+	CR_MEMBER(blockedTargetRetargetInterval)
 ))
 
 
@@ -198,7 +201,10 @@ CWeapon::CWeapon(CUnit* owner, const WeaponDef* def):
 	fastAutoRetargeting(false),
 	fastQueryPointUpdate(false),
 	accurateLeading(0),
-	burstControlWhenOutOfArc(0)
+	burstControlWhenOutOfArc(0),
+
+	targetIsBlocked(false),
+	blockedTargetRetargetInterval(16)
 {
 	assert(weaponMemPool.alloced(this));
 }
@@ -457,6 +463,10 @@ bool CWeapon::CanFire(bool ignoreAngleGood, bool ignoreTargetType, bool ignoreRe
 void CWeapon::UpdateFire()
 {
 	ZoneScoped;
+	// blocked targets are aimed at but never fired upon
+	if (targetIsBlocked)
+		return;
+
 	if (!CanFire(false, false, false))
 		return;
 
@@ -653,6 +663,7 @@ void CWeapon::DropCurrentTarget()
 		DeleteDeathDependence(currentTarget.unit, DEPENDENCE_TARGETUNIT);
 
 	currentTarget = SWeaponTarget();
+	targetIsBlocked = false;
 }
 
 
@@ -681,6 +692,10 @@ bool CWeapon::AllowWeaponAutoTarget() const
 		return true;
 	if (avoidTarget)
 		return true;
+
+	// blocked targets use a faster retarget interval since the blockage may clear soon
+	if (targetIsBlocked)
+		return (gs->frameNum > (lastTargetRetry + blockedTargetRetargetInterval));
 
 	if (HaveUnitTarget()) {
 		if (!TryTarget(SWeaponTarget(currentTarget.unit, currentTarget.isUserTarget))) {
@@ -723,6 +738,7 @@ bool CWeapon::AutoTarget()
 
 	CUnit* goodTargetUnit = nullptr;
 	CUnit*  badTargetUnit = nullptr;
+	CUnit* blockedTargetUnit = nullptr;
 
 	auto& targetPairs = helper->targetPairs;
 
@@ -742,8 +758,16 @@ bool CWeapon::AutoTarget()
 
 		// set isAutoTarget s.t. TestRange result is ignored
 		// (which enables pre-aiming at targets out of range)
-		if (!TryTarget(SWeaponTarget(unit, false, autoTargetRangeBoost > 0.0f)))
+		if (!TryTarget(SWeaponTarget(unit, false, autoTargetRangeBoost > 0.0f))) {
+			// Target failed TryTarget - it may be blocked by range, terrain, or friendlies.
+			// GenerateWeaponTargets already verified TestTarget, so failures here are from
+			// TestRange or HaveFreeLineOfFire. Track the best blocked target as a fallback
+			// so the weapon can aim at it even though it can't fire.
+			if (blockedTargetUnit == nullptr)
+				blockedTargetUnit = unit;
+
 			continue;
+		}
 
 		if (unit->IsNeutral() && (owner->fireState < FIRESTATE_FIREATNEUTRAL))
 			continue;
@@ -761,8 +785,17 @@ bool CWeapon::AutoTarget()
 		goodTargetUnit = badTargetUnit;
 
 	if (goodTargetUnit != nullptr) {
-		// pick our new target
+		// pick our new shootable target
 		SetAttackTarget(SWeaponTarget(goodTargetUnit));
+		targetIsBlocked = false;
+		return true;
+	}
+
+	// no shootable target found; fall back to the best blocked target
+	// so AimWeapon still runs and the weapon animates toward it
+	if (blockedTargetUnit != nullptr) {
+		SetAttackTarget(SWeaponTarget(blockedTargetUnit));
+		targetIsBlocked = true;
 		return true;
 	}
 
@@ -810,6 +843,19 @@ void CWeapon::HoldIfTargetInvalid()
 	RECOIL_DETAILED_TRACY_ZONE;
 	if (!HaveTarget())
 		return;
+
+	if (targetIsBlocked) {
+		// For blocked targets, only check fundamental validity (alive, in LOS, correct category, etc.)
+		// but do not check range or line-of-fire since we already know those fail.
+		// The weapon keeps aiming at this target; faster retargeting will find a better one if available.
+		const float3 tgtPos = GetLeadTargetPos(currentTarget);
+
+		if (!TestTarget(tgtPos, currentTarget)) {
+			DropCurrentTarget();
+		}
+
+		return;
+	}
 
 	if (!TryTarget(currentTarget)) {
 		DropCurrentTarget();

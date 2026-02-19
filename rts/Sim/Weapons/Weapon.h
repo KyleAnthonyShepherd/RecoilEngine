@@ -220,6 +220,9 @@ public:
 	unsigned int accurateLeading;
 	unsigned int burstControlWhenOutOfArc;
 
+	bool targetIsBlocked;                   // true if current target is valid but blocked by range/terrain/friendlies (aim only, no fire)
+	int blockedTargetRetargetInterval;      // frames between retarget attempts when current target is blocked
+
 protected:
 	SWeaponTarget currentTarget;
 	float3 currentTargetPos;

@@ -2452,7 +2452,8 @@ int LuaSyncedCtrl::SetUnitStockpile(lua_State* L)
  * @field forceAim integer?
  * @field avoidFlags integer?
  * @field collisionFlags integer?
- * @field ttl number? How many seconds the projectile should live 
+ * @field ttl number? How many seconds the projectile should live
+ * @field blockedTargetRetargetInterval integer? Frames between retarget attempts when current target is blocked (default 16)
  */
 
 static bool SetSingleUnitWeaponState(lua_State* L, CWeapon* weapon, int index)
@@ -2487,6 +2488,10 @@ static bool SetSingleUnitWeaponState(lua_State* L, CWeapon* weapon, int index)
 
 		case hashString("autoTargetRangeBoost"): {
 			weapon->autoTargetRangeBoost = std::max(0.0f, lua_tofloat(L, index + 1));
+		} break;
+
+		case hashString("blockedTargetRetargetInterval"): {
+			weapon->blockedTargetRetargetInterval = std::max(1, lua_toint(L, index + 1));
 		} break;
 
 		case hashString("burst"): {

@@ -5212,7 +5212,9 @@ int LuaSyncedRead::GetUnitMaxRange(lua_State* L)
  *   "targetMoveError" (extra inaccuracy against moving targets, after XP bonus)
  *   "avoidFlags" (bitmask for targeting avoidance),
  *   "ttl" (number of seconds a projectile should live)
- *   "collisionFlags" (bitmask for collisions).
+ *   "collisionFlags" (bitmask for collisions),
+ *   "targetIsBlocked" (true if current target is blocked by range/terrain/friendlies),
+ *   "blockedTargetRetargetInterval" (frames between retarget attempts when target is blocked).
  *
  * The state "salvoError" is an exception and returns a table: {x, y, z},
  * which represents the inaccuracy error of the ongoing burst.
@@ -5278,6 +5280,13 @@ int LuaSyncedRead::GetUnitWeaponState(lua_State* L)
 
 		case hashString("autoTargetRangeBoost"): {
 			lua_pushnumber(L, weapon->autoTargetRangeBoost);
+		} break;
+
+		case hashString("targetIsBlocked"): {
+			lua_pushboolean(L, weapon->targetIsBlocked);
+		} break;
+		case hashString("blockedTargetRetargetInterval"): {
+			lua_pushnumber(L, weapon->blockedTargetRetargetInterval);
 		} break;
 
 		case hashString("burst"): {
