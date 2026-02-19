@@ -1039,13 +1039,16 @@ int CUnitScript::GetUnitVal(int val, int p1, int p2, int p3, int p4)
 		return int(absPos.y * COBSCALE);
 	} break;
 	case PIECE_HEADING: {
-		const LocalModelPiece* piece = SafeGetPiece(p1);
-		if (piece == nullptr) {
+		if (!SafeGetPiece(p1)) {
 			ShowUnitScriptError("[US::GetUnitVal::PIECE_HEADING] invalid script piece index");
 			break;
 		}
-		const float3 dir = piece->GetDirection();
-		return GetHeadingFromVector(dir.x, dir.z);
+		float3 emitPos;
+		float3 emitDir;
+		if (!GetEmitDirPos(p1, emitPos, emitDir))
+			break;
+		const float3 worldDir = unit->GetObjectSpaceVec(emitDir);
+		return GetHeadingFromVector(worldDir.x, worldDir.z);
 	} break;
 
 	case UNIT_XZ: {
