@@ -1047,8 +1047,7 @@ int CUnitScript::GetUnitVal(int val, int p1, int p2, int p3, int p4)
 		float3 emitDir;
 		if (!GetEmitDirPos(p1, emitPos, emitDir))
 			break;
-		const float3 worldDir = unit->GetObjectSpaceVec(emitDir);
-		return GetHeadingFromVector(worldDir.x, worldDir.z);
+		return GetHeadingFromVector(emitDir.x, emitDir.z);
 	} break;
 
 	case UNIT_XZ: {
