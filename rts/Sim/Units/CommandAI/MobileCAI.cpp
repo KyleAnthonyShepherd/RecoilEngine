@@ -69,6 +69,9 @@ CR_REG_METADATA(CMobileCAI, (
 	CR_MEMBER(buggerOffRadius),
 	CR_MEMBER(repairBelowHealth),
 
+	CR_MEMBER(engagementRange),
+	CR_MEMBER(fightEngagementRange),
+
 	CR_MEMBER(tempOrder),
 	CR_MEMBER(slowGuard),
 	CR_MEMBER(moveDir),
@@ -545,8 +548,13 @@ void CMobileCAI::ExecuteFight(Command& c)
 	if (owner->unitDef->canAttack && owner->fireState >= FIRESTATE_FIREATWILL && !owner->weapons.empty()) {
 		const float3 curPosOnLine = ClosestPointOnLine(commandPos1, commandPos2, owner->pos);
 
-		const float leashRadius = 100.0f * owner->moveState * owner->moveState;
-		const float searchRadius = owner->maxRange + leashRadius;
+		float searchRadius;
+		if (fightEngagementRange >= 0.0f) {
+			searchRadius = fightEngagementRange;
+		} else {
+			const float leashRadius = 100.0f * owner->moveState * owner->moveState;
+			searchRadius = owner->maxRange + leashRadius;
+		}
 
 		CUnit* enemy = CGameHelper::GetClosestValidTarget(curPosOnLine, searchRadius, owner->allyteam, this);
 
@@ -1205,8 +1213,13 @@ bool CMobileCAI::GenerateAttackCmd()
 	if (owner->fireState == FIRESTATE_HOLDFIRE)
 		return false;
 
-	float  extraRadius = 200.0f * owner->moveState * owner->moveState;
-	float searchRadius = owner->maxRange + extraRadius;
+	float searchRadius;
+	if (engagementRange >= 0.0f) {
+		searchRadius = engagementRange;
+	} else {
+		float extraRadius = 200.0f * owner->moveState * owner->moveState;
+		searchRadius = owner->maxRange + extraRadius;
+	}
 
 	int newAttackTargetId = -1;
 

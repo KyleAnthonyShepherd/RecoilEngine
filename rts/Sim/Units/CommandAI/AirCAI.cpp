@@ -224,8 +224,12 @@ bool CAirCAI::AirAutoGenerateTarget(AAirMoveType* myPlane) {
 	const bool autoAttack = ((owner->fireState >= FIRESTATE_FIREATWILL) && (owner->moveState != MOVESTATE_HOLDPOS));
 	const bool isFlying = (myPlane->aircraftState == AAirMoveType::AIRCRAFT_FLYING);
 
-	// float searchRadius = 500.0f * owner->moveState;
-	float searchRadius = 1000.0f * owner->moveState;
+	float searchRadius;
+	if (engagementRange >= 0.0f) {
+		searchRadius = engagementRange;
+	} else {
+		searchRadius = 1000.0f * owner->moveState;
+	}
 
 	if (!ownerDef->canAttack || !autoAttack || owner->maxRange <= 0.0f)
 		return false;
@@ -326,11 +330,14 @@ void CAirCAI::ExecuteFight(Command& c)
 	if ((owner->fireState >= FIRESTATE_FIREATWILL) && (owner->moveState != MOVESTATE_HOLDPOS) && (owner->maxRange > 0.0f) && ownerDef->canAttack) {
 		CUnit* enemy = nullptr;
 
+		const float fighterSearchRadius = (fightEngagementRange >= 0.0f) ? fightEngagementRange : 1000.0f * owner->moveState;
+		const float  groundSearchRadius = (fightEngagementRange >= 0.0f) ? fightEngagementRange :  500.0f * owner->moveState;
+
 		if (ownerDef->IsFighterAirUnit()) {
 			const float3 ofs = owner->speed * 10.0f;
 			const float3 pos = ClosestPointOnLine(commandPos1, commandPos2, owner->pos + ofs);
 
-			enemy = CGameHelper::GetClosestEnemyAircraft(nullptr, pos, 1000.0f * owner->moveState, owner->allyteam);
+			enemy = CGameHelper::GetClosestEnemyAircraft(nullptr, pos, fighterSearchRadius, owner->allyteam);
 		}
 
 		if (IsValidTarget(enemy, nullptr) && (owner->moveState != MOVESTATE_MANEUVER || LinePointDist(commandPos1, commandPos2, enemy->pos) < 1000)) {
@@ -359,7 +366,7 @@ void CAirCAI::ExecuteFight(Command& c)
 			const float3 ofs = owner->speed * 20.0f;
 			const float3 pos = ClosestPointOnLine(commandPos1, commandPos2, owner->pos + ofs);
 
-			if ((enemy = CGameHelper::GetClosestValidTarget(pos, 500.0f * owner->moveState, owner->allyteam, this)) != nullptr) {
+			if ((enemy = CGameHelper::GetClosestValidTarget(pos, groundSearchRadius, owner->allyteam, this)) != nullptr) {
 				PushOrUpdateReturnFight();
 
 				// make the attack-command inherit <c>'s options
