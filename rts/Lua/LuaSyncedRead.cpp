@@ -3292,8 +3292,26 @@ int LuaSyncedRead::GetUnitsInExplosion(lua_State* L)
 	const bool fullRead = CLuaHandle::GetHandleFullRead(L);
 
 #define EXPLOSION_TEST                                                              \
-	const float3 closestPt =                                                        \
-		unit->collisionVolume.GetClosestSurfacePoint(unit, nullptr, pos);            \
+	float3 closestPt;                                                               \
+	if (unit->collisionVolume.DefaultToPieceTree()) {                               \
+		float bestDistSq = 1e30f;                                                  \
+		for (unsigned int n = 0; n < unit->localModel.pieces.size(); n++) {         \
+			const LocalModelPiece* lmp = unit->localModel.GetPiece(n);             \
+			const CollisionVolume* lmpVol = lmp->GetCollisionVolume();              \
+			if (!lmp->GetScriptVisible() || lmpVol->IgnoreHits())                  \
+				continue;                                                           \
+			const float3 pt =                                                       \
+				lmpVol->GetClosestSurfacePoint(unit, lmp, pos);                    \
+			const float dSq = (pt - pos).SqLength();                               \
+			if (dSq < bestDistSq) {                                                \
+				bestDistSq = dSq;                                                  \
+				closestPt = pt;                                                     \
+			}                                                                       \
+		}                                                                           \
+	} else {                                                                        \
+		closestPt =                                                                 \
+			unit->collisionVolume.GetClosestSurfacePoint(unit, nullptr, pos);      \
+	}                                                                               \
 	const float dx = (closestPt.x - x);                                            \
 	const float dy = (closestPt.y - y);                                            \
 	const float dz = (closestPt.z - z);                                            \
