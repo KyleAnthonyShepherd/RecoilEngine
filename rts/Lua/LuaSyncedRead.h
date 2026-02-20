@@ -90,6 +90,7 @@ class LuaSyncedRead {
 		static int GetUnitsInCylinder(lua_State* L);
 		static int GetUnitsInExplosion(lua_State* L);
 		static int GetUnitClosestPointFromExplosion(lua_State* L);
+		static int GetUnitsNearLine(lua_State* L);
 
 		static int GetUnitArrayCentroid(lua_State* L);
 		static int GetUnitMapCentroid(lua_State* L);
