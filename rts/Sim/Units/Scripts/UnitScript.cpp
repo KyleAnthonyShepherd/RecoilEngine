@@ -1048,6 +1048,16 @@ int CUnitScript::GetUnitVal(int val, int p1, int p2, int p3, int p4)
 		return GetHeadingFromVector(dir.x, dir.z);
 	} break;
 
+	case PIECE_PITCH: {
+		const LocalModelPiece* piece = SafeGetPiece(p1);
+		if (piece == nullptr) {
+			ShowUnitScriptError("[US::GetUnitVal::PIECE_PITCH] invalid script piece index");
+			break;
+		}
+		const float3 dir = (piece->GetModelSpaceTransform() * float4(0.0f, 0.0f, 1.0f, 0.0f) * WORLD_TO_OBJECT_SPACE).SafeNormalize();
+		return GetHAndPFromVector(dir).y;
+	} break;
+
 	case UNIT_XZ: {
 		if (p1 <= 0)
 			return PACKXZ(unit->pos.x, unit->pos.z);
