@@ -3435,69 +3435,96 @@ int LuaSyncedRead::GetUnitsNearLine(lua_State* L)
 
 	const float3 p1(x1, y1, z1);
 	const float3 p2(x2, y2, z2);
-
-	// AABB around the line segment expanded by distance (XZ plane, infinite Y)
-	float3 mins = float3::min(p1, p2) - float3(distance, 0.0f, distance);
-	float3 maxs = float3::max(p1, p2) + float3(distance, 0.0f, distance);
+	const float3 diff = p2 - p1;
+	const float length = diff.Length();
+	const float3 dir = (length > 1e-4f) ? (diff / length) : FwdVector;
 
 	const int allegiance = LuaUtils::ParseAllegiance(L, __func__, 8);
 	const int readAllyTeam = CLuaHandle::GetHandleReadAllyTeam(L);
-	const bool fullRead = CLuaHandle::GetHandleFullRead(L);
-
-#define LINE_DISTANCE_TEST                                                          \
-	float3 closestPt;                                                               \
-	if (unit->collisionVolume.DefaultToPieceTree()) {                               \
-		float bestDistSq = 1e30f;                                                  \
-		for (unsigned int n = 0; n < unit->localModel.pieces.size(); n++) {         \
-			const LocalModelPiece* lmp = unit->localModel.GetPiece(n);             \
-			const CollisionVolume* lmpVol = lmp->GetCollisionVolume();              \
-			if (!lmp->GetScriptVisible() || lmpVol->IgnoreHits())                  \
-				continue;                                                           \
-			const float3 pt =                                                       \
-				lmpVol->GetClosestSurfacePointFromLineSegment(unit, lmp, p1, p2);  \
-			const float dSq = pt.SqDistance(ClosestPointOnLine(p1, p2, pt));        \
-			if (dSq < bestDistSq) {                                                \
-				bestDistSq = dSq;                                                  \
-				closestPt = pt;                                                     \
-			}                                                                       \
-		}                                                                           \
-	} else {                                                                        \
-		closestPt = unit->collisionVolume                                           \
-			.GetClosestSurfacePointFromLineSegment(unit, nullptr, p1, p2);         \
-	}                                                                               \
-	const float3 lineNear = ClosestPointOnLine(p1, p2, closestPt);                  \
-	const float lineDSq = closestPt.SqDistance(lineNear);                           \
-	if (lineDSq > distSqr) {                                                       \
-		continue;                                                                   \
-	}                                                                               \
-
-	if (!fullRead)
-		ApplyPlanarTeamError(L, allegiance, mins, maxs);
+	const int readTeam = CLuaHandle::GetHandleReadTeam(L);
 
 	QuadFieldQuery qfQuery;
-	quadField.GetUnitsExact(qfQuery, mins, maxs);
-	const auto& units = (*qfQuery.units);
+	quadField.GetQuadsOnWideRay(qfQuery, p1, dir, length, distance);
 
-	if (allegiance >= 0) {
-		if (LuaUtils::IsAlliedTeam(L, allegiance)) {
-			LOOP_UNIT_CONTAINER_WITH_POINT(SIMPLE_TEAM_TEST, LINE_DISTANCE_TEST, true);
+	lua_createtable(L, 0, 0);
+
+	for (const int quadIdx: *qfQuery.quads) {
+		const CQuadField::Quad& quad = quadField.GetQuad(quadIdx);
+
+		for (const CUnit* unit: quad.units) {
+			// dedup: skip if already in the result table
+			lua_rawgeti(L, -1, unit->id);
+			if (!lua_isnil(L, -1)) {
+				lua_pop(L, 1);
+				continue;
+			}
+			lua_pop(L, 1);
+
+			// allegiance filter
+			if (allegiance >= 0) {
+				if (unit->team != allegiance)
+					continue;
+				if (!LuaUtils::IsAlliedTeam(L, allegiance) && !LuaUtils::IsUnitVisible(L, unit))
+					continue;
+			}
+			else if (allegiance == LuaUtils::MyUnits) {
+				if (unit->team != readTeam)
+					continue;
+			}
+			else if (allegiance == LuaUtils::AllyUnits) {
+				if (unit->allyteam != readAllyTeam)
+					continue;
+			}
+			else if (allegiance == LuaUtils::EnemyUnits) {
+				if (unit->allyteam == readAllyTeam)
+					continue;
+				if (!LuaUtils::IsUnitVisible(L, unit))
+					continue;
+			}
+			else { // AllUnits
+				if (!LuaUtils::IsUnitVisible(L, unit))
+					continue;
+			}
+
+			// find closest surface point on the unit's colvol to the line segment
+			float3 closestPt;
+
+			if (unit->collisionVolume.DefaultToPieceTree()) {
+				float bestDistSq = 1e30f;
+
+				for (unsigned int n = 0; n < unit->localModel.pieces.size(); n++) {
+					const LocalModelPiece* lmp = unit->localModel.GetPiece(n);
+					const CollisionVolume* lmpVol = lmp->GetCollisionVolume();
+
+					if (!lmp->GetScriptVisible() || lmpVol->IgnoreHits())
+						continue;
+
+					const float3 pt = lmpVol->GetClosestSurfacePointFromLineSegment(unit, lmp, p1, p2);
+					const float dSq = pt.SqDistance(ClosestPointOnLine(p1, p2, pt));
+
+					if (dSq < bestDistSq) {
+						bestDistSq = dSq;
+						closestPt = pt;
+					}
+				}
+			} else {
+				closestPt = unit->collisionVolume.GetClosestSurfacePointFromLineSegment(unit, nullptr, p1, p2);
+			}
+
+			// check if the closest surface point is within the distance threshold
+			const float3 lineNear = ClosestPointOnLine(p1, p2, closestPt);
+			const float lineDSq = closestPt.SqDistance(lineNear);
+
+			if (lineDSq > distSqr)
+				continue;
+
+			// push {x, y, z} table keyed by unitID
+			lua_createtable(L, 3, 0);
+			lua_pushnumber(L, closestPt.x); lua_rawseti(L, -2, 1);
+			lua_pushnumber(L, closestPt.y); lua_rawseti(L, -2, 2);
+			lua_pushnumber(L, closestPt.z); lua_rawseti(L, -2, 3);
+			lua_rawseti(L, -2, unit->id);
 		}
-		else {
-			LOOP_UNIT_CONTAINER_WITH_POINT(VISIBLE_TEAM_TEST, LINE_DISTANCE_TEST, true);
-		}
-	}
-	else if (allegiance == LuaUtils::MyUnits) {
-		const int readTeam = CLuaHandle::GetHandleReadTeam(L);
-		LOOP_UNIT_CONTAINER_WITH_POINT(MY_UNIT_TEST, LINE_DISTANCE_TEST, true);
-	}
-	else if (allegiance == LuaUtils::AllyUnits) {
-		LOOP_UNIT_CONTAINER_WITH_POINT(ALLY_UNIT_TEST, LINE_DISTANCE_TEST, true);
-	}
-	else if (allegiance == LuaUtils::EnemyUnits) {
-		LOOP_UNIT_CONTAINER_WITH_POINT(ENEMY_UNIT_TEST, LINE_DISTANCE_TEST, true);
-	}
-	else { // AllUnits
-		LOOP_UNIT_CONTAINER_WITH_POINT(VISIBLE_TEST, LINE_DISTANCE_TEST, true);
 	}
 
 	return 1;
