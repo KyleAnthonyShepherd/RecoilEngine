@@ -1788,6 +1788,7 @@ void CCommandAI::WeaponFired(CWeapon* weapon, const bool searchForNewTarget, boo
 	if (!orderFinished)
 		return;
 
+	StopMove();
 	FinishCommand();
 }
 

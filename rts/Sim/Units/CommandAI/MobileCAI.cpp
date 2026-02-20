@@ -808,9 +808,14 @@ void CMobileCAI::ExecuteObjectAttack(Command& c)
 			goalDiff += orderTarget->pos;
 
 			SetGoal(goalDiff, owner->pos);
+			return;
 		}
 
-		return;
+		// for CMD_MANUALFIRE, don't give up when close but unable to fire;
+		// aimFromPos may have shifted out of range when entering firing stance,
+		// so fall through to movement code below to continue closing in
+		if (c.GetID() != CMD_MANUALFIRE)
+			return;
 	}
 
 	// not a temporary order or not on hold-position; close in on target more
