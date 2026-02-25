@@ -82,6 +82,25 @@ public:
 	// fighters abort dive toward target if within this distance and climb back to normal altitude
 	float attackSafetyDistance = 0.0f;
 
+	/// max altitude as multiple of wantedHeight
+	float maxAltitudeFactor = 5.0f;
+	/// thrust angle limiting factor when behind air target (higher = more limiting)
+	float attackAngleLimitFactor = 0.7f;
+	/// distance multiplier on maxRange for entering attack mode
+	float attackRangeMultiplier = 4.0f;
+	/// aileron effectiveness scaling multiplier
+	float aileronSpeedFactor = 4.0f;
+
+	/// control surface smoothing weight for current frame input
+	float ctrlSmoothCurrent = 0.6f;
+	/// control surface smoothing weight for previous frame input
+	float ctrlSmoothPrev1 = 0.3f;
+	/// control surface smoothing weight for two frames ago input
+	float ctrlSmoothPrev2 = 0.1f;
+
+	/// bank angle threshold for initiating loopback attack maneuvers
+	float loopbackBankThreshold = 0.05f;
+
 	/// used while landing
 	float crashAileron = 0.0f;
 	float crashElevator = 0.0f;

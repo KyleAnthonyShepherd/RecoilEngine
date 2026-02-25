@@ -6046,7 +6046,7 @@ int LuaSyncedRead::GetUnitMoveTypeData(lua_State* L)
 
 	AMoveType* amt = unit->moveType;
 
-	lua_createtable(L, 0, 26);
+	lua_createtable(L, 0, 48);
 	HSTR_PUSH_NUMBER(L, "maxSpeed", amt->GetMaxSpeed() * GAME_SPEED);
 	HSTR_PUSH_NUMBER(L, "maxWantedSpeed", amt->GetMaxWantedSpeed() * GAME_SPEED);
 	HSTR_PUSH_NUMBER(L, "goalx", amt->goalPos.x);
@@ -6185,17 +6185,40 @@ int LuaSyncedRead::GetUnitMoveTypeData(lua_State* L)
 		HSTR_PUSH_NUMBER(L, "wantedHeight", sAMT->wantedHeight);
 		HSTR_PUSH_BOOL(L, "collide", sAMT->collide);
 		HSTR_PUSH_BOOL(L, "useSmoothMesh", sAMT->useSmoothMesh);
+		HSTR_PUSH_BOOL(L, "loopbackAttack", sAMT->loopbackAttack);
+		HSTR_PUSH_BOOL(L, "isFighter", sAMT->isFighter);
 
 		HSTR_PUSH_NUMBER(L, "myGravity", sAMT->myGravity);
 
 		HSTR_PUSH_NUMBER(L, "maxBank", sAMT->maxBank);
-		HSTR_PUSH_NUMBER(L, "maxPitch", sAMT->maxBank);
+		HSTR_PUSH_NUMBER(L, "maxPitch", sAMT->maxPitch);
 		HSTR_PUSH_NUMBER(L, "turnRadius", sAMT->turnRadius);
 
 		HSTR_PUSH_NUMBER(L, "maxAcc", sAMT->accRate);
+		HSTR_PUSH_NUMBER(L, "accRate", sAMT->accRate);
+		HSTR_PUSH_NUMBER(L, "decRate", sAMT->decRate);
 		HSTR_PUSH_NUMBER(L, "maxAileron", sAMT->maxAileron);
 		HSTR_PUSH_NUMBER(L, "maxElevator", sAMT->maxElevator);
 		HSTR_PUSH_NUMBER(L, "maxRudder", sAMT->maxRudder);
+		HSTR_PUSH_NUMBER(L, "attackSafetyDistance", sAMT->attackSafetyDistance);
+
+		HSTR_PUSH_NUMBER(L, "wingDrag", sAMT->wingDrag);
+		HSTR_PUSH_NUMBER(L, "wingAngle", sAMT->wingAngle);
+		HSTR_PUSH_NUMBER(L, "invDrag", sAMT->invDrag);
+		HSTR_PUSH_NUMBER(L, "crashDrag", sAMT->crashDrag);
+		HSTR_PUSH_NUMBER(L, "frontToSpeed", sAMT->frontToSpeed);
+		HSTR_PUSH_NUMBER(L, "speedToFront", sAMT->speedToFront);
+
+		HSTR_PUSH_NUMBER(L, "maxAltitudeFactor", sAMT->maxAltitudeFactor);
+		HSTR_PUSH_NUMBER(L, "attackAngleLimitFactor", sAMT->attackAngleLimitFactor);
+		HSTR_PUSH_NUMBER(L, "attackRangeMultiplier", sAMT->attackRangeMultiplier);
+		HSTR_PUSH_NUMBER(L, "aileronSpeedFactor", sAMT->aileronSpeedFactor);
+
+		HSTR_PUSH_NUMBER(L, "ctrlSmoothCurrent", sAMT->ctrlSmoothCurrent);
+		HSTR_PUSH_NUMBER(L, "ctrlSmoothPrev1", sAMT->ctrlSmoothPrev1);
+		HSTR_PUSH_NUMBER(L, "ctrlSmoothPrev2", sAMT->ctrlSmoothPrev2);
+
+		HSTR_PUSH_NUMBER(L, "loopbackBankThreshold", sAMT->loopbackBankThreshold);
 
 		return 1;
 	}

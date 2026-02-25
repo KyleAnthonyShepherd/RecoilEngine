@@ -840,6 +840,7 @@ int LuaSyncedMoveCtrl::SetGunshipMoveTypeData(lua_State* L)
  * @field collide boolean?
  * @field useSmoothMesh boolean?
  * @field loopbackAttack boolean?
+ * @field isFighter boolean?
  * @field maneuverBlockTime integer?
  * @field wantedHeight number?
  * @field turnRadius number?
@@ -854,6 +855,20 @@ int LuaSyncedMoveCtrl::SetGunshipMoveTypeData(lua_State* L)
  * @field maxRudder number?
  * @field attackSafetyDistance number?
  * @field myGravity number?
+ * @field wingDrag number?
+ * @field wingAngle number?
+ * @field invDrag number?
+ * @field crashDrag number?
+ * @field frontToSpeed number?
+ * @field speedToFront number?
+ * @field maxAltitudeFactor number? Max altitude as multiple of wantedHeight (default 5.0).
+ * @field attackAngleLimitFactor number? Thrust angle limiting factor when behind air target (default 0.7).
+ * @field attackRangeMultiplier number? Distance multiplier on maxRange for entering attack mode (default 4.0).
+ * @field aileronSpeedFactor number? Aileron effectiveness scaling multiplier (default 4.0).
+ * @field ctrlSmoothCurrent number? Control surface smoothing weight for current frame input (default 0.6).
+ * @field ctrlSmoothPrev1 number? Control surface smoothing weight for previous frame input (default 0.3).
+ * @field ctrlSmoothPrev2 number? Control surface smoothing weight for two frames ago input (default 0.1).
+ * @field loopbackBankThreshold number? Bank angle threshold for initiating loopback attack maneuvers (default 0.05).
  */
 
 /***
@@ -870,7 +885,8 @@ int LuaSyncedMoveCtrl::SetGunshipMoveTypeData(lua_State* L)
  * | "collide"
  * | "useSmoothMesh"
  * | "loopbackAttack"
-  * @param value boolean
+ * | "isFighter"
+ * @param value boolean
  * @return number numAssignedValues
  */
 /***
@@ -878,19 +894,33 @@ int LuaSyncedMoveCtrl::SetGunshipMoveTypeData(lua_State* L)
  * @param unitID integer
  * @param key
  * | GenericMoveTypeNumberKey
- * | "wantedHeight" 
- * | "turnRadius" 
- * | "accRate" 
- * | "decRate" 
+ * | "wantedHeight"
+ * | "turnRadius"
+ * | "accRate"
+ * | "decRate"
  * | "maxAcc" # Synonym for `accRate`.
  * | "maxDec" # Synonym for `decRate`.
- * | "maxBank" 
- * | "maxPitch" 
- * | "maxAileron" 
- * | "maxElevator" 
- * | "maxRudder" 
- * | "attackSafetyDistance" 
- * | "myGravity" 
+ * | "maxBank"
+ * | "maxPitch"
+ * | "maxAileron"
+ * | "maxElevator"
+ * | "maxRudder"
+ * | "attackSafetyDistance"
+ * | "myGravity"
+ * | "wingDrag"
+ * | "wingAngle"
+ * | "invDrag"
+ * | "crashDrag"
+ * | "frontToSpeed"
+ * | "speedToFront"
+ * | "maxAltitudeFactor" # Max altitude as multiple of wantedHeight (default 5.0).
+ * | "attackAngleLimitFactor" # Thrust angle limiting factor when behind air target (default 0.7).
+ * | "attackRangeMultiplier" # Distance multiplier on maxRange for entering attack mode (default 4.0).
+ * | "aileronSpeedFactor" # Aileron effectiveness scaling multiplier (default 4.0).
+ * | "ctrlSmoothCurrent" # Control surface smoothing weight for current frame input (default 0.6).
+ * | "ctrlSmoothPrev1" # Control surface smoothing weight for previous frame input (default 0.3).
+ * | "ctrlSmoothPrev2" # Control surface smoothing weight for two frames ago input (default 0.1).
+ * | "loopbackBankThreshold" # Bank angle threshold for initiating loopback attack maneuvers (default 0.05).
  * @param value number
  * @return number numAssignedValues
  */

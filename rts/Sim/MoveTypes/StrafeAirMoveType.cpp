@@ -47,6 +47,17 @@ CR_REG_METADATA(CStrafeAirMoveType, (
 	CR_MEMBER(maxRudder),
 	CR_MEMBER(attackSafetyDistance),
 
+	CR_MEMBER(maxAltitudeFactor),
+	CR_MEMBER(attackAngleLimitFactor),
+	CR_MEMBER(attackRangeMultiplier),
+	CR_MEMBER(aileronSpeedFactor),
+
+	CR_MEMBER(ctrlSmoothCurrent),
+	CR_MEMBER(ctrlSmoothPrev1),
+	CR_MEMBER(ctrlSmoothPrev2),
+
+	CR_MEMBER(loopbackBankThreshold),
+
 	CR_MEMBER(crashAileron),
 	CR_MEMBER(crashElevator),
 	CR_MEMBER(crashRudder),
@@ -67,6 +78,7 @@ static const unsigned int BOOL_MEMBER_HASHES[] = {
 	MEMBER_LITERAL_HASH(       "collide"),
 	MEMBER_LITERAL_HASH( "useSmoothMesh"),
 	MEMBER_LITERAL_HASH("loopbackAttack"),
+	MEMBER_LITERAL_HASH(     "isFighter"),
 };
 
 static const unsigned int INT_MEMBER_HASHES[] = {
@@ -87,6 +99,24 @@ static const unsigned int FLOAT_MEMBER_HASHES[] = {
 	MEMBER_LITERAL_HASH(           "maxRudder"),
 	MEMBER_LITERAL_HASH("attackSafetyDistance"),
 	MEMBER_LITERAL_HASH(           "myGravity"),
+
+	MEMBER_LITERAL_HASH(            "wingDrag"),
+	MEMBER_LITERAL_HASH(           "wingAngle"),
+	MEMBER_LITERAL_HASH(             "invDrag"),
+	MEMBER_LITERAL_HASH(           "crashDrag"),
+	MEMBER_LITERAL_HASH(        "frontToSpeed"),
+	MEMBER_LITERAL_HASH(        "speedToFront"),
+
+	MEMBER_LITERAL_HASH(   "maxAltitudeFactor"),
+	MEMBER_LITERAL_HASH("attackAngleLimitFactor"),
+	MEMBER_LITERAL_HASH( "attackRangeMultiplier"),
+	MEMBER_LITERAL_HASH(  "aileronSpeedFactor"),
+
+	MEMBER_LITERAL_HASH(  "ctrlSmoothCurrent"),
+	MEMBER_LITERAL_HASH(    "ctrlSmoothPrev1"),
+	MEMBER_LITERAL_HASH(    "ctrlSmoothPrev2"),
+
+	MEMBER_LITERAL_HASH("loopbackBankThreshold"),
 };
 
 #undef MEMBER_CHARPTR_HASH
@@ -154,14 +184,15 @@ static float GetAileronDeflection(
 	float goalDotRight,
 	float goalDotFront,
 	bool /*avoidCollision*/,
-	bool isAttacking
+	bool isAttacking,
+	float aileronSpeedFactor
 ) {
 	RECOIL_DETAILED_TRACY_ZONE;
 	float aileron = 0.0f;
 
 	// ailerons function less effectively at low (forward) speed
 	const float maxAileronSpeedf  = std::max(0.01f, maxAileron * spd.w);
-	const float maxAileronSpeedf2 = std::max(0.01f, maxAileronSpeedf * 4.0f);
+	const float maxAileronSpeedf2 = std::max(0.01f, maxAileronSpeedf * aileronSpeedFactor);
 
 	if (isAttacking) {
 		const float minPredictedHeight = pos.y + spd.y * 60.0f * math::fabs(frontdir.y) + std::min(0.0f, updir.y * 1.0f) * (GAME_SPEED * 5);
@@ -329,7 +360,11 @@ static float3 GetControlSurfaceAngles(
 	float goalDotRight,
 	float goalDotFront,
 	bool avoidCollision,
-	bool isAttacking
+	bool isAttacking,
+	float aileronSpeedFactor,
+	float ctrlSmoothCurrent,
+	float ctrlSmoothPrev1,
+	float ctrlSmoothPrev2
 ) {
 	RECOIL_DETAILED_TRACY_ZONE;
 	float3 ctrlAngles;
@@ -337,10 +372,10 @@ static float3 GetControlSurfaceAngles(
 	// yaw (rudder), pitch (elevator), roll (aileron)
 	ctrlAngles.x = (yprInputLocks.x != 0.0f)? GetRudderDeflection  (owner, collidee,  pos, spd,  rightdir, updir, frontdir, goalDir,  groundHeight, wantedHeight,  maxCtrlAngles.x, maxBodyAngles.x,  goalDotRight, goalDotFront,  avoidCollision, isAttacking): 0.0f;
 	ctrlAngles.y = (yprInputLocks.y != 0.0f)? GetElevatorDeflection(owner, collidee,  pos, spd,  rightdir, updir, frontdir, goalDir,  groundHeight, wantedHeight,  maxCtrlAngles.y, maxBodyAngles.y,  goalDotRight, goalDotFront,  avoidCollision, isAttacking): 0.0f;
-	ctrlAngles.z = (yprInputLocks.z != 0.0f)? GetAileronDeflection (owner, collidee,  pos, spd,  rightdir, updir, frontdir, goalDir,  groundHeight, wantedHeight,  maxCtrlAngles.z, maxBodyAngles.z,  goalDotRight, goalDotFront,  avoidCollision, isAttacking): 0.0f;
+	ctrlAngles.z = (yprInputLocks.z != 0.0f)? GetAileronDeflection (owner, collidee,  pos, spd,  rightdir, updir, frontdir, goalDir,  groundHeight, wantedHeight,  maxCtrlAngles.z, maxBodyAngles.z,  goalDotRight, goalDotFront,  avoidCollision, isAttacking, aileronSpeedFactor): 0.0f;
 
 	// let the previous control angles have some authority
-	return (ctrlAngles * 0.6f + prvCtrlAngles[0] * 0.3f + prvCtrlAngles[1] * 0.1f);
+	return (ctrlAngles * ctrlSmoothCurrent + prvCtrlAngles[0] * ctrlSmoothPrev1 + prvCtrlAngles[1] * ctrlSmoothPrev2);
 }
 
 
@@ -349,11 +384,12 @@ static int SelectLoopBackManeuver(
 	const SyncedFloat3& rightdir,
 	const float4& spd,
 	float turnRadius,
-	float groundDist
+	float groundDist,
+	float loopbackBankThreshold
 ) {
 	RECOIL_DETAILED_TRACY_ZONE;
 	// do not start looping if already banked
-	if (math::fabs(rightdir.y) > 0.05f)
+	if (math::fabs(rightdir.y) > loopbackBankThreshold)
 		return CStrafeAirMoveType::MANEUVER_FLY_STRAIGHT;
 
 	if (groundDist > TurnRadius(turnRadius, spd.w)) {
@@ -488,7 +524,7 @@ bool CStrafeAirMoveType::Update()
 					}
 
 					const bool goalInFront = ((goalPos - lastPos).dot(owner->frontdir) > 0.0f);
-					const bool goalInRange = (goalPos.SqDistance(lastPos) < Square(owner->maxRange * 4.0f));
+					const bool goalInRange = (goalPos.SqDistance(lastPos) < Square(owner->maxRange * attackRangeMultiplier));
 
 					// NOTE: UpdateAttack changes goalPos
 					if (maneuverState != MANEUVER_FLY_STRAIGHT) {
@@ -503,7 +539,7 @@ bool CStrafeAirMoveType::Update()
 
 							const float altitude = CGround::GetHeightAboveWater(owner->pos.x, owner->pos.z) - lastPos.y;
 
-							if ((maneuverState = SelectLoopBackManeuver(frontdir, rightdir, lastSpd, turnRadius, altitude)) == MANEUVER_IMMELMAN_INV)
+							if ((maneuverState = SelectLoopBackManeuver(frontdir, rightdir, lastSpd, turnRadius, altitude, loopbackBankThreshold)) == MANEUVER_IMMELMAN_INV)
 								maneuverSubState = 0;
 						}
 					}
@@ -790,13 +826,13 @@ void CStrafeAirMoveType::UpdateAttack()
 		const float3  maxBodyAngles    = {0.0f, maxPitch, maxBank};
 		const float3  maxCtrlAngles    = {maxRudder, maxElevator, maxAileron};
 		const float3  prvCtrlAngles[2] = {{lastRudderPos[0], lastElevatorPos[0], lastAileronPos[0]}, {lastRudderPos[1], lastElevatorPos[1], lastAileronPos[1]}};
-		const float3& curCtrlAngles    = GetControlSurfaceAngles(owner, lastCollidee,  pos, spd,  rightdir, updir, frontdir, goalDir,  OnesVector, maxBodyAngles, maxCtrlAngles, prvCtrlAngles,  gHeightAW, wantedHeight,  goalDotRight, goalDotFront,  false && collisionState == COLLISION_DIRECT, true);
+		const float3& curCtrlAngles    = GetControlSurfaceAngles(owner, lastCollidee,  pos, spd,  rightdir, updir, frontdir, goalDir,  OnesVector, maxBodyAngles, maxCtrlAngles, prvCtrlAngles,  gHeightAW, wantedHeight,  goalDotRight, goalDotFront,  false && collisionState == COLLISION_DIRECT, true, aileronSpeedFactor, ctrlSmoothCurrent, ctrlSmoothPrev1, ctrlSmoothPrev2);
 
 		const CUnit* attackee = owner->curTarget.unit;
 
 		// limit thrust when in range of (air) target and directly behind it
 		const float  rangeLim = goalDist / owner->maxRange;
-		const float  angleLim = 1.0f - goalDotFront * 0.7f;
+		const float  angleLim = 1.0f - goalDotFront * attackAngleLimitFactor;
 		const float thrustLim = ((attackee == nullptr) || attackee->unitDef->IsGroundUnit())? 1.0f: std::min(1.0f, rangeLim + angleLim);
 
 		UpdateAirPhysics({curCtrlAngles.x, curCtrlAngles.y, curCtrlAngles.z, thrustLim}, frontdir);
@@ -882,7 +918,7 @@ bool CStrafeAirMoveType::UpdateFlying(float wantedHeight, float wantedThrottle)
 	const float3  maxBodyAngles    = {0.0f, maxPitch, maxBank};
 	const float3  maxCtrlAngles    = {maxRudder, maxElevator, maxAileron};
 	const float3  prvCtrlAngles[2] = {{lastRudderPos[0], lastElevatorPos[0], lastAileronPos[0]}, {lastRudderPos[1], lastElevatorPos[1], lastAileronPos[1]}};
-	const float3& curCtrlAngles    = GetControlSurfaceAngles(owner, lastCollidee,  pos, spd,  rightdir, updir, frontdir, goalDir2D,  yprInputLocks, maxBodyAngles, maxCtrlAngles, prvCtrlAngles,  groundHeight, wantedHeight,  goalDotRight, goalDotFront,  false && collisionState == COLLISION_DIRECT, false);
+	const float3& curCtrlAngles    = GetControlSurfaceAngles(owner, lastCollidee,  pos, spd,  rightdir, updir, frontdir, goalDir2D,  yprInputLocks, maxBodyAngles, maxCtrlAngles, prvCtrlAngles,  groundHeight, wantedHeight,  goalDotRight, goalDotFront,  false && collisionState == COLLISION_DIRECT, false, aileronSpeedFactor, ctrlSmoothCurrent, ctrlSmoothPrev1, ctrlSmoothPrev2);
 
 	UpdateAirPhysics({curCtrlAngles, wantedThrottle}, owner->frontdir);
 
@@ -1129,7 +1165,7 @@ bool CStrafeAirMoveType::UpdateAirPhysics(const float4& controlInputs, const flo
 		owner->Move(spd, true);
 
 	// prevent aircraft from gaining unlimited altitude
-	owner->Move(UpVector * (std::clamp(pos.y, groundHeight, readMap->GetCurrMaxHeight() + owner->unitDef->wantedHeight * 5.0f) - pos.y), true);
+	owner->Move(UpVector * (std::clamp(pos.y, groundHeight, readMap->GetCurrMaxHeight() + owner->unitDef->wantedHeight * maxAltitudeFactor) - pos.y), true);
 
 	// bounce away on ground collisions (including water surface)
 	// NOTE:
@@ -1391,6 +1427,7 @@ bool CStrafeAirMoveType::SetMemberValue(unsigned int memberHash, void* memberVal
 		&collide,
 		&useSmoothMesh,
 		&loopbackAttack,
+		&isFighter,
 	};
 	int* intMemberPtrs[] = {
 		&maneuverBlockTime,
@@ -1413,6 +1450,24 @@ bool CStrafeAirMoveType::SetMemberValue(unsigned int memberHash, void* memberVal
 		&attackSafetyDistance,
 
 		&myGravity,
+
+		&wingDrag,
+		&wingAngle,
+		&invDrag,
+		&crashDrag,
+		&frontToSpeed,
+		&speedToFront,
+
+		&maxAltitudeFactor,
+		&attackAngleLimitFactor,
+		&attackRangeMultiplier,
+		&aileronSpeedFactor,
+
+		&ctrlSmoothCurrent,
+		&ctrlSmoothPrev1,
+		&ctrlSmoothPrev2,
+
+		&loopbackBankThreshold,
 	};
 
 	// special cases
