@@ -69,7 +69,6 @@
 #include "Sim/Units/CommandAI/Command.h"
 #include "Sim/Units/CommandAI/CommandAI.h"
 #include "Sim/Units/CommandAI/FactoryCAI.h"
-#include "Sim/Units/UnitTypes/ExtractorBuilding.h"
 #include "Sim/Weapons/PlasmaRepulser.h"
 #include "Sim/Weapons/Weapon.h"
 #include "Sim/Weapons/WeaponDefHandler.h"
@@ -3141,15 +3140,10 @@ int LuaSyncedCtrl::SetUnitMetalExtraction(lua_State* L)
 	if (unit == nullptr)
 		return 0;
 
-	CExtractorBuilding* mex = dynamic_cast<CExtractorBuilding*>(unit);
-
-	if (mex == nullptr)
-		return 0;
-
 	const float depth = luaL_checkfloat(L, 2);
-	const float range = luaL_optfloat(L, 3, mex->GetExtractionRange());
-	mex->ResetExtraction();
-	mex->SetExtractionRangeAndDepth(range, depth);
+	const float range = luaL_optfloat(L, 3, unit->GetExtractionRange());
+	unit->ResetExtraction();
+	unit->SetExtractionRangeAndDepth(range, depth);
 	return 0;
 }
 

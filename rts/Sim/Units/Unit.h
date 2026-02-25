@@ -65,6 +65,7 @@ class CUnit : public CSolidObject
 {
 public:
 	CR_DECLARE(CUnit)
+	CR_DECLARE_SUB(MetalSquareOfControl)
 
 	CUnit();
 	virtual ~CUnit();
@@ -103,6 +104,17 @@ public:
 
 	virtual void Activate();
 	virtual void Deactivate();
+
+	// metal extraction (formerly in CExtractorBuilding)
+	void ResetExtraction();
+	void SetExtractionRangeAndDepth(float range, float depth);
+	void ReCalculateMetalExtraction();
+	bool IsExtractorNeighbour(CUnit* other);
+	void AddExtractorNeighbour(CUnit* neighbour);
+	void RemoveExtractorNeighbour(CUnit* neighbour);
+
+	float GetExtractionRange() const { return extractionRange; }
+	float GetExtractionDepth() const { return extractionDepth; }
 
 	void ForcedMove(const float3& newPos) override;
 
@@ -443,6 +455,21 @@ public:
 
 	// how much metal the unit currently extracts from the ground
 	float metalExtract = 0.0f;
+
+	// metal extraction state
+	struct MetalSquareOfControl {
+		CR_DECLARE_STRUCT(MetalSquareOfControl)
+		int x;
+		int z;
+		float extractionDepth;
+	};
+
+	float extractionRange = 0.0f;
+	float extractionDepth = 0.0f;
+	std::vector<MetalSquareOfControl> metalAreaOfControl;
+	std::vector<CUnit*> extractorNeighbours;
+
+	static float maxExtractionRange;
 
 	float buildTime = 100.0f;
 

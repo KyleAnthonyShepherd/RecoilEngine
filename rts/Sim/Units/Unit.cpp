@@ -8,7 +8,6 @@
 #include "UnitMemPool.h"
 #include "UnitToolTipMap.hpp"
 #include "UnitTypes/Building.h"
-#include "UnitTypes/ExtractorBuilding.h"
 #include "Scripts/NullUnitScript.h"
 #include "Scripts/UnitScriptFactory.h"
 #include "Scripts/CobInstance.h" // for TAANG2RAD
@@ -28,6 +27,7 @@
 #include "Game/Players/Player.h"
 #include "Map/Ground.h"
 #include "Map/MapInfo.h"
+#include "Map/MetalMap.h"
 #include "Map/ReadMap.h"
 
 #include "Rendering/GroundFlash.h"
@@ -59,6 +59,7 @@
 #include "Sim/Weapons/Weapon.h"
 #include "Sim/Weapons/WeaponDefHandler.h"
 #include "Sim/Weapons/WeaponLoader.h"
+#include "System/ContainerUtil.h"
 #include "System/EventHandler.h"
 #include "System/Log/ILog.h"
 #include "System/Matrix44f.h"
@@ -73,6 +74,7 @@
 #include "System/Misc/TracyDefs.h"
 
 GlobalUnitParams globalUnitParams;
+float CUnit::maxExtractionRange = 0.0f;
 
 // See end of source for member bindings
 //////////////////////////////////////////////////////////////////////
@@ -101,6 +103,11 @@ CUnit::~CUnit()
 {
 	RECOIL_DETAILED_TRACY_ZONE;
 	assert(unitMemPool.mapped(this));
+
+	// clean up metal extraction state before anything else
+	if (unitDef != nullptr && unitDef->IsExtractorUnit())
+		ResetExtraction();
+
 	// clean up if we are still under MoveCtrl here
 	DisableScriptMoveType();
 
@@ -307,6 +314,9 @@ void CUnit::PreInit(const UnitLoadParams& params)
 	useHighTrajectory = (unitDef->highTrajectoryType == 1);
 
 	harvestStorage = unitDef->harvestStorage;
+
+	extractionRange = unitDef->extractRange;
+	extractionDepth = unitDef->extractsMetal;
 
 	moveType = MoveTypeFactory::GetMoveType(this, unitDef);
 	script = CUnitScriptFactory::CreateScript(this, unitDef);
@@ -1959,9 +1969,8 @@ void CUnit::TurnIntoNanoframe()
 	SetStorage(0.0f);
 
 	// make sure neighbor extractors update
-	const auto extractor = dynamic_cast <CExtractorBuilding*> (this);
-	if (extractor != nullptr)
-		extractor->ResetExtraction();
+	if (unitDef->IsExtractorUnit())
+		ResetExtraction();
 
 	eventHandler.UnitReverseBuilt(this);
 }
@@ -2379,6 +2388,10 @@ void CUnit::Activate()
 	if (unitDef->targfac)
 		losHandler->DecreaseAllyTeamRadarErrorSize(allyteam);
 
+	// activate metal extraction
+	if (unitDef->IsExtractorUnit())
+		SetExtractionRangeAndDepth(extractionRange, extractionDepth);
+
 	if (IsInLosForAllyTeam(gu->myAllyTeam))
 		Channels::General->PlayRandomSample(unitDef->sounds.activate, this);
 }
@@ -2396,10 +2409,148 @@ void CUnit::Deactivate()
 	if (unitDef->targfac)
 		losHandler->IncreaseAllyTeamRadarErrorSize(allyteam);
 
+	// deactivate metal extraction
+	if (unitDef->IsExtractorUnit())
+		ResetExtraction();
+
 	if (IsInLosForAllyTeam(gu->myAllyTeam))
 		Channels::General->PlayRandomSample(unitDef->sounds.deactivate, this);
 }
 
+
+//////////////////////////////////////////////////////////////////////
+// Metal extraction (formerly CExtractorBuilding)
+//////////////////////////////////////////////////////////////////////
+
+void CUnit::ResetExtraction()
+{
+	RECOIL_DETAILED_TRACY_ZONE;
+	metalExtract = 0;
+	script->ExtractionRateChanged(metalExtract);
+
+	// undo the extraction-area
+	for (auto si = metalAreaOfControl.begin(); si != metalAreaOfControl.end(); ++si) {
+		metalMap.RemoveExtraction(si->x, si->z, si->extractionDepth);
+	}
+
+	metalAreaOfControl.clear();
+
+	// tell the neighbours (if any) to take it over
+	for (CUnit* ngb: extractorNeighbours) {
+		ngb->RemoveExtractorNeighbour(this);
+		ngb->ReCalculateMetalExtraction();
+	}
+	extractorNeighbours.clear();
+}
+
+
+bool CUnit::IsExtractorNeighbour(CUnit* other)
+{
+	RECOIL_DETAILED_TRACY_ZONE;
+	// circle vs. circle
+	return (this->pos.SqDistance2D(other->pos) < Square(this->extractionRange + other->extractionRange));
+}
+
+
+void CUnit::SetExtractionRangeAndDepth(float range, float depth)
+{
+	RECOIL_DETAILED_TRACY_ZONE;
+	extractionRange = std::max(range, 0.001f);
+	extractionDepth = std::max(depth, 0.0f);
+	maxExtractionRange = std::max(extractionRange, maxExtractionRange);
+
+	// find any neighbouring extractors
+	QuadFieldQuery qfQuery;
+	quadField.GetUnits(qfQuery, pos, extractionRange + maxExtractionRange);
+
+	for (CUnit* u: *qfQuery.units) {
+		if (u == this)
+			continue;
+		if (!u->unitDef->IsExtractorUnit())
+			continue;
+
+		if (!IsExtractorNeighbour(u))
+			continue;
+
+		this->AddExtractorNeighbour(u);
+		u->AddExtractorNeighbour(this);
+	}
+
+	if (!activated) {
+		assert(metalExtract == 0); // when deactivated metalExtract should always be 0
+
+		return;
+	}
+
+	// calculate this extractor's area of control and metalExtract amount
+	metalExtract = 0;
+
+	const int xBegin = std::max(                   0, (int) ((pos.x - extractionRange) / METAL_MAP_SQUARE_SIZE));
+	const int xEnd   = std::min(mapDims.mapx / 2 - 1, (int) ((pos.x + extractionRange) / METAL_MAP_SQUARE_SIZE));
+	const int zBegin = std::max(                   0, (int) ((pos.z - extractionRange) / METAL_MAP_SQUARE_SIZE));
+	const int zEnd   = std::min(mapDims.mapy / 2 - 1, (int) ((pos.z + extractionRange) / METAL_MAP_SQUARE_SIZE));
+
+	metalAreaOfControl.reserve((xEnd - xBegin + 1) * (zEnd - zBegin + 1));
+
+	// go through the whole (x, z)-square
+	for (int x = xBegin; x <= xEnd; x++) {
+		for (int z = zBegin; z <= zEnd; z++) {
+			// center of metalsquare at (x, z)
+			const float3 msqrPos((x + 0.5f) * METAL_MAP_SQUARE_SIZE, pos.y,
+													 (z + 0.5f) * METAL_MAP_SQUARE_SIZE);
+			const float sqrCenterDistance = msqrPos.SqDistance2D(this->pos);
+
+			if (sqrCenterDistance < Square(extractionRange)) {
+				MetalSquareOfControl msqr;
+				msqr.x = x;
+				msqr.z = z;
+				// extraction is done in a cylinder of height <depth>
+				msqr.extractionDepth = metalMap.RequestExtraction(x, z, depth);
+				metalAreaOfControl.push_back(msqr);
+				metalExtract += msqr.extractionDepth * metalMap.GetMetalAmount(msqr.x, msqr.z);
+			}
+		}
+	}
+
+	// set the COB animation speed
+	script->ExtractionRateChanged(metalExtract);
+}
+
+
+void CUnit::AddExtractorNeighbour(CUnit* neighbour)
+{
+	RECOIL_DETAILED_TRACY_ZONE;
+	assert(neighbour != this);
+	spring::VectorInsertUnique(extractorNeighbours, neighbour, true);
+}
+
+
+void CUnit::RemoveExtractorNeighbour(CUnit* neighbour)
+{
+	RECOIL_DETAILED_TRACY_ZONE;
+	assert(neighbour != this);
+	spring::VectorErase(extractorNeighbours, neighbour);
+}
+
+
+void CUnit::ReCalculateMetalExtraction()
+{
+	RECOIL_DETAILED_TRACY_ZONE;
+	metalExtract = 0;
+
+	for (MetalSquareOfControl& msqr: metalAreaOfControl) {
+		metalMap.RemoveExtraction(msqr.x, msqr.z, msqr.extractionDepth);
+
+		if (activated) {
+			// extraction is done in a cylinder
+			msqr.extractionDepth = metalMap.RequestExtraction(msqr.x, msqr.z, extractionDepth);
+			metalExtract += (msqr.extractionDepth * metalMap.GetMetalAmount(msqr.x, msqr.z));
+		}
+	}
+
+	// set the new rotation-speed
+	script->ExtractionRateChanged(metalExtract);
+}
 
 
 void CUnit::UpdateWind(float x, float z, float strength)
@@ -2998,6 +3149,11 @@ CR_REG_METADATA(CUnit, (
 
 	CR_MEMBER(metalExtract),
 
+	CR_MEMBER(extractionRange),
+	CR_MEMBER(extractionDepth),
+	CR_MEMBER(metalAreaOfControl),
+	CR_MEMBER(extractorNeighbours),
+
 	CR_MEMBER(cost),
 	CR_MEMBER(buildTime),
 
@@ -3071,6 +3227,14 @@ CR_BIND(CUnit::TransportedUnit,)
 CR_REG_METADATA_SUB(CUnit, TransportedUnit, (
 	CR_MEMBER(unit),
 	CR_MEMBER(piece)
+))
+
+CR_BIND(CUnit::MetalSquareOfControl, )
+
+CR_REG_METADATA_SUB(CUnit, MetalSquareOfControl, (
+	CR_MEMBER(x),
+	CR_MEMBER(z),
+	CR_MEMBER(extractionDepth)
 ))
 
 CR_BIND(GlobalUnitParams, )

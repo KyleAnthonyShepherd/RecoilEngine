@@ -7,7 +7,6 @@
 #include "UnitDefHandler.h"
 #include "UnitMemPool.h"
 #include "UnitTypes/Builder.h"
-#include "UnitTypes/ExtractorBuilding.h"
 #include "UnitTypes/Factory.h"
 
 #include "CommandAI/BuilderCAI.h"
@@ -79,12 +78,8 @@ CUnit* CUnitHandler::NewUnit(const UnitDef* ud)
 		return (unitMemPool.alloc<CBuilder>());
 
 	// static non-builder structures
-	if (ud->IsBuildingUnit()) {
-		if (ud->IsExtractorUnit())
-			return (unitMemPool.alloc<CExtractorBuilding>());
-
+	if (ud->IsBuildingUnit())
 		return (unitMemPool.alloc<CBuilding>());
-	}
 
 	// regular mobile unit
 	return (unitMemPool.alloc<CUnit>());
