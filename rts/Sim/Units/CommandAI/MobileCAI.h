@@ -103,6 +103,7 @@ protected:
 	int lastCloseInTry = -1;
 	int lastBuggerOffTime = -BUGGER_OFF_TTL;
 	int lastIdleCheck = 0;
+	int lastAutoGenerateTargetFrame = -1;
 	int buggerOffAttempts = 0;
 
 	static constexpr int MAX_CLOSE_IN_RETRY_TICKS = 30;
