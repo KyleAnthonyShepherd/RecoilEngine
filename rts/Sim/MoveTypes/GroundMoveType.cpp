@@ -2658,6 +2658,9 @@ bool CGroundMoveType::HandleStaticObjectCollision(
 		const int xsquare = (pos.x / SQUARE_SIZE);
 		const int zsquare = (pos.z / SQUARE_SIZE);
 
+		// For the "intersect" zone (squares the unit actually occupies, used for positionStuck
+		// and push-out), use the MoveDef footprint — this keeps path-collision agreement for
+		// axis-aligned (square) units.
 		const int realMinX = xsquare + (-colliderMD->xsizeh);
 		const int realMinZ = zsquare + (-colliderMD->zsizeh);
 		const int realMaxX = xsquare +   colliderMD->xsizeh ;
@@ -2668,9 +2671,30 @@ bool CGroundMoveType::HandleStaticObjectCollision(
 		//   however, testing more squares means CD can (sometimes) disagree with PFS
 		//   in narrow passages --> still possible, but have to ensure we allow only
 		//   lateral (non-obstructing) bounces
-		const int xsh = colliderMD->xsizeh * (checkYardMap || (checkTerrain && colliderMD->allowTerrainCollisions));
-		const int zsh = colliderMD->zsizeh * (checkYardMap || (checkTerrain && colliderMD->allowTerrainCollisions));
+		//
+		// For elongated/rotated footprints (e.g. a 3x10 battleship) the MoveDef is
+		// often square (3x3), so using colliderMD->xsizeh/zsizeh misses the nose and
+		// tail of the unit. Compute the AABB of the unit's oriented footprint (OBB) so
+		// we visit every square the actual physical hull might overlap.
+		int xsh, zsh;
 		const int intersectSize = colliderMD->xsize;
+		if (checkYardMap || (checkTerrain && colliderMD->allowTerrainCollisions)) {
+			// OBB half-extents in world-space squares, accounting for unit rotation.
+			// half-extents of the physical footprint in elmos:
+			const float fpHalfX = owner->footprint.x * 0.5f;
+			const float fpHalfZ = owner->footprint.y * 0.5f;
+			// project OBB onto axis-aligned axes using the unit's front/right dirs
+			const float3& fdir = owner->frontdir;
+			const float3& rdir = owner->rightdir;
+			const float aabbHalfX = math::fabs(fdir.x) * fpHalfZ + math::fabs(rdir.x) * fpHalfX;
+			const float aabbHalfZ = math::fabs(fdir.z) * fpHalfZ + math::fabs(rdir.z) * fpHalfX;
+			// convert to squares, add 1 for safety
+			xsh = static_cast<int>(aabbHalfX) + 1;
+			zsh = static_cast<int>(aabbHalfZ) + 1;
+		} else {
+			xsh = 0;
+			zsh = 0;
+		}
 
 		const int xmin = std::min(-1, -xsh), xmax = std::max(1, xsh);
 		const int zmin = std::min(-1, -zsh), zmax = std::max(1, zsh);
