@@ -120,7 +120,8 @@ decltype(CGameServer::commandBlacklist) CGameServer::commandBlacklist{
 	"nopause", "nohelp", "cheat", "desync", "godmode", "globallos",
 	"nocost", "forcestart", "nospectatorchat", "nospecdraw",
 	"skip", "reloadcob", "reloadcegs", "devlua", "editdefs",
-	"singlestep", "spec", "specbynum"
+	"singlestep", "spec", "specbynum",
+	"stopreplay"
 };
 
 
@@ -2491,6 +2492,20 @@ void CGameServer::PushAction(const Action& action, bool fromAutoHost)
 				modGameTime = demoReader->GetModGameTime() + 0.001f;
 
 			CreateNewFrame(true, true);
+		} break;
+
+		case hashString("stopreplay"): {
+			if (!cheating) {
+				Message("Cheating must be enabled to stop a replay (use /cheat first)");
+				return;
+			}
+			if (demoReader == nullptr) {
+				Message("No replay is currently playing");
+				return;
+			}
+
+			demoReader.reset();
+			Message("Replay stopped, game is now in normal mode");
 		} break;
 
 		case hashString("adduser"): {
