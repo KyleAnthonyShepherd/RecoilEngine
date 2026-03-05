@@ -277,6 +277,7 @@ private:
 	bool allowSpecDraw = true;
 	bool allowSpecJoin = false;
 	bool whiteListAdditionalPlayers = false;
+	bool replayStopped = false;
 
 	bool logInfoMessages = false;
 	bool logDebugMessages = false;

@@ -1568,7 +1568,7 @@ void CGameServer::ProcessPacket(const unsigned playerNum, std::shared_ptr<const 
 					const bool isNewTeamValid = (newTeamID < teams.size());
 					const bool isSinglePlayer = (players.size() <= 1);
 
-					if (!isNewTeamValid || (!isSinglePlayer && !cheating)) {
+					if (!isNewTeamValid || (!isSinglePlayer && !cheating && !replayStopped)) {
 						Message(spring::format(NoTeamChange, players[player].name.c_str(), player, newTeamID));
 						break;
 					}
@@ -2505,7 +2505,8 @@ void CGameServer::PushAction(const Action& action, bool fromAutoHost)
 			}
 
 			demoReader.reset();
-			Message("Replay stopped, game is now in normal mode");
+			replayStopped = true;
+			Message("Replay stopped: use /team N to take control of a team");
 		} break;
 
 		case hashString("adduser"): {
