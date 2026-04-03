@@ -679,6 +679,8 @@ bool CWeapon::AllowWeaponAutoTarget() const
 		return false;
 	if (weaponDef->interceptor)
 		return false;
+	if (weaponDef->IsBuildPowerWeapon())
+		return false;
 
 	// if CAI has an auto-generated attack order, do not interfere
 	if (!owner->commandAI->CanWeaponAutoTarget(this))
