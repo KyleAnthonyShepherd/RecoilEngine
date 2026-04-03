@@ -84,7 +84,13 @@ void CBuildPowerWeapon::SetBuildPowerCommand(CUnit* target, int action)
 {
 	ClearFeatureTarget();
 	commandedAction = action;
-	SetAttackTarget(SWeaponTarget(target, true));
+
+	SWeaponTarget wt(target, true);
+	// mark as auto-target so HoldIfTargetInvalid does not drop
+	// the target when the unit moves out of range; the weapon
+	// will simply stop firing until back in range (gated by angleGood)
+	wt.isAutoTarget = true;
+	SetAttackTarget(wt);
 }
 
 void CBuildPowerWeapon::SetBuildPowerCommand(CFeature* target, int action)
