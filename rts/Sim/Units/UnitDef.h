@@ -85,9 +85,10 @@ public:
 	bool HasWeapons() const { return (HasWeapon(0)); }
 	bool HasWeapon(unsigned int idx) const { return (weapons[idx].def != nullptr); }
 	bool HasBomberWeapon(unsigned int idx) const;
+	bool HasCombatWeapons() const;
 
-	bool CanAttack() const { return (canAttack && (canKamikaze || HasWeapons() || IsFactoryUnit())); }
-	bool CanDamage() const { return (canKamikaze || (canAttack && HasWeapons())); }
+	bool CanAttack() const { return (canAttack && (canKamikaze || HasCombatWeapons() || IsFactoryUnit())); }
+	bool CanDamage() const { return (canKamikaze || (canAttack && HasCombatWeapons())); }
 
 	unsigned int NumWeapons() const {
 		unsigned int n = 0;
