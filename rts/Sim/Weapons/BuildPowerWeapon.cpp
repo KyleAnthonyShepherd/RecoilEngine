@@ -131,37 +131,14 @@ int CBuildPowerWeapon::DetermineActionUnit(CUnit* target) const
 	if (target == nullptr || target->isDead)
 		return BP_None;
 
-	// If CommandAI set a specific action, use it (validates capability only)
-	if (commandedAction != BP_None) {
-		switch (commandedAction) {
-			case BP_Repair:    return (weaponDef->bpCanRepair)  ? BP_Repair  : BP_None;
-			case BP_Build:     return (weaponDef->bpCanBuild)   ? BP_Build   : BP_None;
-			case BP_Reclaim:   return (weaponDef->bpCanReclaim) ? BP_Reclaim : BP_None;
-			case BP_Capture:   return (weaponDef->bpCanCapture) ? BP_Capture : BP_None;
-			default: break;
-		}
-	}
-
-	// Auto-target: pick best action based on target state
-	const bool isAlly = teamHandler.Ally(owner->allyteam, target->allyteam);
-
-	if (isAlly) {
-		if (target->beingBuilt && target->buildProgress < 1.0f && weaponDef->bpCanBuild)
-			return BP_Build;
-
-		if (target->health < target->maxHealth && target->unitDef->repairable && weaponDef->bpCanRepair)
-			return BP_Repair;
-
-		return BP_None;
-	}
-	else {
-		if (weaponDef->bpCanCapture && target->unitDef->capturable)
-			return BP_Capture;
-
-		if (weaponDef->bpCanReclaim)
-			return BP_Reclaim;
-
-		return BP_None;
+	// Only act on explicit commands from CommandAI or Lua.
+	// Behavior decisions are made gameside, not by the engine.
+	switch (commandedAction) {
+		case BP_Repair:    return (weaponDef->bpCanRepair)  ? BP_Repair  : BP_None;
+		case BP_Build:     return (weaponDef->bpCanBuild)   ? BP_Build   : BP_None;
+		case BP_Reclaim:   return (weaponDef->bpCanReclaim) ? BP_Reclaim : BP_None;
+		case BP_Capture:   return (weaponDef->bpCanCapture) ? BP_Capture : BP_None;
+		default:           return BP_None;
 	}
 }
 
@@ -170,23 +147,13 @@ int CBuildPowerWeapon::DetermineActionFeature(CFeature* target) const
 	if (target == nullptr || target->deleteMe)
 		return BP_None;
 
-	// If CommandAI set a specific action, use it
-	if (commandedAction != BP_None) {
-		switch (commandedAction) {
-			case BP_Resurrect: return (weaponDef->bpCanResurrect) ? BP_Resurrect : BP_None;
-			case BP_Reclaim:   return (weaponDef->bpCanReclaim)   ? BP_Reclaim   : BP_None;
-			default: break;
-		}
+	// Only act on explicit commands from CommandAI or Lua.
+	// Behavior decisions are made gameside, not by the engine.
+	switch (commandedAction) {
+		case BP_Resurrect: return (weaponDef->bpCanResurrect) ? BP_Resurrect : BP_None;
+		case BP_Reclaim:   return (weaponDef->bpCanReclaim)   ? BP_Reclaim   : BP_None;
+		default:           return BP_None;
 	}
-
-	// Auto-target: prefer resurrect over reclaim
-	if (target->udef != nullptr && target->def->resurrectable != 0 && weaponDef->bpCanResurrect)
-		return BP_Resurrect;
-
-	if (target->def->reclaimable && weaponDef->bpCanReclaim)
-		return BP_Reclaim;
-
-	return BP_None;
 }
 
 
