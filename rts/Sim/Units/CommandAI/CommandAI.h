@@ -105,6 +105,7 @@ public:
 	bool RemoveCommandDescription(unsigned int cmdDescIdx);
 
 	void UpdateNonQueueingCommands();
+	void RegisterBuildPowerCommands();
 
 	void SetCommandDescParam0(const Command& c);
 	bool ExecuteStateCommand(const Command& c);

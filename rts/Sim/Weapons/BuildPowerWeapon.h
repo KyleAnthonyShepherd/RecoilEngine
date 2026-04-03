@@ -72,6 +72,8 @@ private:
 	/// Set the feature target (tracked separately from CWeapon::currentTarget)
 	void SetFeatureTarget(CFeature* f);
 	void ClearFeatureTarget();
+
+	float GetPredictedImpactTime(const float3& p) const override { return 0.0f; };
 };
 
 #endif // BUILDPOWER_WEAPON_H

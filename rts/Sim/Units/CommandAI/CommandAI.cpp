@@ -370,56 +370,65 @@ CCommandAI::CCommandAI(CUnit* owner):
 
 	UpdateNonQueueingCommands();
 
-	// Register build-power commands for non-builder units with BuildPower weapons
+}
+
+void CCommandAI::RegisterBuildPowerCommands()
+{
+	// Register build-power commands for non-builder units with BuildPower weapons.
+	// Called from CUnit::PostInit after weapons are loaded.
 	// (BuilderCAI handles this for actual builders)
-	if (!owner->unitDef->builder) {
-		CBuildPowerWeapon* bpw = CBuildPowerWeapon::GetBuildPowerWeapon(owner);
+	if (owner->unitDef->builder)
+		return;
 
-		if (bpw != nullptr) {
-			const WeaponDef* bpDef = bpw->weaponDef;
+	CBuildPowerWeapon* bpw = CBuildPowerWeapon::GetBuildPowerWeapon(owner);
 
-			if (bpDef->bpCanRepair) {
-				SCommandDescription c;
-				c.id   = CMD_REPAIR;
-				c.type = CMDTYPE_ICON_UNIT_OR_AREA;
-				c.action    = "repair";
-				c.name      = "Repair";
-				c.tooltip   = c.name + ": Repairs another unit";
-				c.mouseicon = c.name;
-				possibleCommands.push_back(commandDescriptionCache.GetPtr(std::move(c)));
-			}
-			if (bpDef->bpCanReclaim) {
-				SCommandDescription c;
-				c.id   = CMD_RECLAIM;
-				c.type = CMDTYPE_ICON_UNIT_FEATURE_OR_AREA;
-				c.action    = "reclaim";
-				c.name      = "Reclaim";
-				c.tooltip   = c.name + ": Reclaims a unit or feature";
-				c.mouseicon = c.name;
-				possibleCommands.push_back(commandDescriptionCache.GetPtr(std::move(c)));
-			}
-			if (bpDef->bpCanResurrect) {
-				SCommandDescription c;
-				c.id   = CMD_RESURRECT;
-				c.type = CMDTYPE_ICON_UNIT_FEATURE_OR_AREA;
-				c.action    = "resurrect";
-				c.name      = "Resurrect";
-				c.tooltip   = c.name + ": Resurrects a unit from a feature";
-				c.mouseicon = c.name;
-				possibleCommands.push_back(commandDescriptionCache.GetPtr(std::move(c)));
-			}
-			if (bpDef->bpCanCapture) {
-				SCommandDescription c;
-				c.id   = CMD_CAPTURE;
-				c.type = CMDTYPE_ICON_UNIT_OR_AREA;
-				c.action    = "capture";
-				c.name      = "Capture";
-				c.tooltip   = c.name + ": Captures an enemy unit";
-				c.mouseicon = c.name;
-				possibleCommands.push_back(commandDescriptionCache.GetPtr(std::move(c)));
-			}
-		}
+	if (bpw == nullptr)
+		return;
+
+	const WeaponDef* bpDef = bpw->weaponDef;
+
+	if (bpDef->bpCanRepair) {
+		SCommandDescription c;
+		c.id   = CMD_REPAIR;
+		c.type = CMDTYPE_ICON_UNIT_OR_AREA;
+		c.action    = "repair";
+		c.name      = "Repair";
+		c.tooltip   = c.name + ": Repairs another unit";
+		c.mouseicon = c.name;
+		possibleCommands.push_back(commandDescriptionCache.GetPtr(std::move(c)));
 	}
+	if (bpDef->bpCanReclaim) {
+		SCommandDescription c;
+		c.id   = CMD_RECLAIM;
+		c.type = CMDTYPE_ICON_UNIT_FEATURE_OR_AREA;
+		c.action    = "reclaim";
+		c.name      = "Reclaim";
+		c.tooltip   = c.name + ": Reclaims a unit or feature";
+		c.mouseicon = c.name;
+		possibleCommands.push_back(commandDescriptionCache.GetPtr(std::move(c)));
+	}
+	if (bpDef->bpCanResurrect) {
+		SCommandDescription c;
+		c.id   = CMD_RESURRECT;
+		c.type = CMDTYPE_ICON_UNIT_FEATURE_OR_AREA;
+		c.action    = "resurrect";
+		c.name      = "Resurrect";
+		c.tooltip   = c.name + ": Resurrects a unit from a feature";
+		c.mouseicon = c.name;
+		possibleCommands.push_back(commandDescriptionCache.GetPtr(std::move(c)));
+	}
+	if (bpDef->bpCanCapture) {
+		SCommandDescription c;
+		c.id   = CMD_CAPTURE;
+		c.type = CMDTYPE_ICON_UNIT_OR_AREA;
+		c.action    = "capture";
+		c.name      = "Capture";
+		c.tooltip   = c.name + ": Captures an enemy unit";
+		c.mouseicon = c.name;
+		possibleCommands.push_back(commandDescriptionCache.GetPtr(std::move(c)));
+	}
+
+	UpdateNonQueueingCommands();
 }
 
 CCommandAI::~CCommandAI()

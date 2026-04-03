@@ -326,6 +326,9 @@ void CUnit::PostInit(const CUnit* builder)
 	CWeaponLoader::LoadWeapons(this);
 	CWeaponLoader::InitWeapons(this);
 
+	// Register build-power commands now that weapons are available
+	commandAI->RegisterBuildPowerCommands();
+
 	// does nothing for LUS, calls Create+SetMaxReloadTime for COB
 	script->Create();
 

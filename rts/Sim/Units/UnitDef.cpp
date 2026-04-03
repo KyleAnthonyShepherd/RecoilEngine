@@ -902,6 +902,17 @@ void UnitDef::SetNoCost(bool noCost)
 	}
 }
 
+bool UnitDef::HasCombatWeapons() const {
+	RECOIL_DETAILED_TRACY_ZONE;
+	for (unsigned int i = 0; i < weapons.size(); i++) {
+		if (weapons[i].def == nullptr)
+			break;
+		if (!weapons[i].def->IsBuildPowerWeapon())
+			return true;
+	}
+	return false;
+}
+
 bool UnitDef::HasBomberWeapon(unsigned int idx) const {
 	RECOIL_DETAILED_TRACY_ZONE;
 	// checked by Is*AirUnit
