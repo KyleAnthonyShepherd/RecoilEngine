@@ -42,6 +42,7 @@ WEAPONTAG(std::string, type).externalName("weaponType").defaultValue("Cannon")
 	"DGun - deprecated, a fiery ball projectile. Has a lot of hardcoded visuals but does NOT convey 'dgun' mechanics. Prefer Cannon instead\n"
 	"EmgCannon - deprecated, a version of Laser or Flame with crappy visuals\n"
 	"Rifle - deprecated, more or less equivalent to invisible Lightning\n"
+	"BuildPower - no projectile, applies build power to targets\n"
 );
 WEAPONDUMMYTAG(table, customParams).description("A table of arbitrary string key-value pairs, for use by Lua gadgets (no engine meaning)");
 
@@ -235,6 +236,20 @@ WEAPONTAG(float4, scarProjVector, visuals.scarProjVector).defaultValue(float4{0.
 WEAPONTAG(float4, scarColorTint, visuals.scarColorTint).defaultValue(float4{0.5f, 0.5f, 0.5f, 0.5f }).description("Color tint for explosion scar decal. Scaled so that 0.5 is no change, 1.0 is twice as bright.");
 WEAPONTAG(bool, alwaysVisible, visuals.alwaysVisible).defaultValue(false).description("Is the projectile visible regardless of sight?");
 WEAPONTAG(float, cameraShake).fallbackName("damage.default").defaultValue(0.0f).minimumValue(0.0f).description("Passed to the wupget:ShockFront callin as the first argument, intended for shaking the camera on particularly strong hits. Same scale as damage.");
+
+// BuildPower weapon tags
+WEAPONTAG(float, bpRepairSpeed).externalName("bpRepairSpeed").defaultValue(100.0f).scaleValue(INV_GAME_SPEED).description("BuildPower weapon: repair speed in buildpower/s.");
+WEAPONTAG(float, bpBuildSpeed).externalName("bpBuildSpeed").defaultValue(100.0f).scaleValue(INV_GAME_SPEED).description("BuildPower weapon: build/assist speed in buildpower/s.");
+WEAPONTAG(float, bpReclaimSpeed).externalName("bpReclaimSpeed").defaultValue(100.0f).scaleValue(INV_GAME_SPEED).description("BuildPower weapon: reclaim speed in buildpower/s.");
+WEAPONTAG(float, bpCaptureSpeed).externalName("bpCaptureSpeed").defaultValue(100.0f).scaleValue(INV_GAME_SPEED).description("BuildPower weapon: capture speed in buildpower/s.");
+WEAPONTAG(float, bpResurrectSpeed).externalName("bpResurrectSpeed").defaultValue(100.0f).scaleValue(INV_GAME_SPEED).description("BuildPower weapon: resurrect speed in buildpower/s.");
+WEAPONTAG(bool, bpCanRepair).externalName("bpCanRepair").defaultValue(true).description("BuildPower weapon: can repair damaged friendly units.");
+WEAPONTAG(bool, bpCanBuild).externalName("bpCanBuild").defaultValue(true).description("BuildPower weapon: can assist construction of friendly units.");
+WEAPONTAG(bool, bpCanReclaim).externalName("bpCanReclaim").defaultValue(true).description("BuildPower weapon: can reclaim features and enemy units.");
+WEAPONTAG(bool, bpCanCapture).externalName("bpCanCapture").defaultValue(false).description("BuildPower weapon: can capture enemy units.");
+WEAPONTAG(bool, bpCanResurrect).externalName("bpCanResurrect").defaultValue(true).description("BuildPower weapon: can resurrect feature corpses.");
+WEAPONTAG(bool, canTargetAllies).externalName("canTargetAllies").defaultValue(false).description("If true, auto-targeting will not reject allied units. Used by BuildPower weapons to repair/assist friendlies.");
+
 WEAPONTAG(float3, animParams1, visuals.animParams[0]).fallbackName("animParams").defaultValue(float3{ 1.0f, 1.0f, 30.0f }).description("Used to do flipbook style animation of texture1");
 WEAPONTAG(float3, animParams2, visuals.animParams[1]).fallbackName("animParams").defaultValue(float3{ 1.0f, 1.0f, 30.0f }).description("Used to do flipbook style animation of texture2");
 WEAPONTAG(float3, animParams3, visuals.animParams[2]).fallbackName("animParams").defaultValue(float3{ 1.0f, 1.0f, 30.0f }).description("Used to do flipbook style animation of texture3");
@@ -537,6 +552,14 @@ WeaponDef::WeaponDef(const LuaTable& wdTable, const std::string& name_, int id_)
 				projectileType = WEAPON_EXPLOSIVE_PROJECTILE;
 				defInterceptType = 8;
 			} break;
+			case hashString("BuildPower"): {
+				canTargetAllies = true;
+				// no projectile to block
+				avoidFriendly = false;
+				avoidFeature = false;
+				avoidNeutral = false;
+				avoidGround = false;
+			} break;
 			default: {
 			} break;
 		}
@@ -568,7 +591,7 @@ WeaponDef::WeaponDef(const LuaTable& wdTable, const std::string& name_, int id_)
 	// internal only
 	isNulled = (STRCASECMP(name.c_str(), "noweapon") == 0);
 	isShield = (type == "Shield");
-	noAutoTarget = (manualfire || interceptor || isShield);
+	noAutoTarget = (manualfire || interceptor || isShield || IsBuildPowerWeapon());
 	onlyForward = !turret && (projectileType != WEAPON_STARBURST_PROJECTILE);
 }
 

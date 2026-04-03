@@ -74,6 +74,7 @@
 #include "Sim/Weapons/Weapon.h"
 #include "Sim/Weapons/WeaponDefHandler.h"
 #include "Sim/Weapons/WeaponTarget.h"
+#include "Sim/Weapons/BuildPowerWeapon.h"
 #include "System/EventHandler.h"
 #include "System/ObjectDependenceTypes.h"
 #include "System/Log/ILog.h"
@@ -228,6 +229,7 @@ bool LuaSyncedCtrl::PushEntries(lua_State* L)
 	REGISTER_LUA_CFUNC(ClearUnitGoal);
 	REGISTER_LUA_CFUNC(SetUnitNeutral);
 	REGISTER_LUA_CFUNC(SetUnitTarget);
+	REGISTER_LUA_CFUNC(SetUnitBuildPowerTarget);
 	REGISTER_LUA_CFUNC(SetUnitMidAndAimPos);
 	REGISTER_LUA_CFUNC(SetUnitRadiusAndHeight);
 	REGISTER_LUA_CFUNC(SetUnitBuildeeRadius);
@@ -395,6 +397,14 @@ bool LuaSyncedCtrl::PushEntries(lua_State* L)
 
 	if (!LuaMetalMap::PushCtrlEntries(L))
 		return false;
+
+	// BuildPower action constants
+	lua_pushnumber(L, CBuildPowerWeapon::BP_None);      lua_setglobal(L, "BP_NONE");
+	lua_pushnumber(L, CBuildPowerWeapon::BP_Repair);    lua_setglobal(L, "BP_REPAIR");
+	lua_pushnumber(L, CBuildPowerWeapon::BP_Build);     lua_setglobal(L, "BP_BUILD");
+	lua_pushnumber(L, CBuildPowerWeapon::BP_Reclaim);   lua_setglobal(L, "BP_RECLAIM");
+	lua_pushnumber(L, CBuildPowerWeapon::BP_Capture);   lua_setglobal(L, "BP_CAPTURE");
+	lua_pushnumber(L, CBuildPowerWeapon::BP_Resurrect); lua_setglobal(L, "BP_RESURRECT");
 
 	return true;
 }
@@ -2511,6 +2521,27 @@ static bool SetSingleUnitWeaponState(lua_State* L, CWeapon* weapon, int index)
 			weapon->ttl = (int) (lua_tonumber(L, index + 1) * GAME_SPEED);
 		} break;
 
+		// BuildPower weapon per-instance speeds (in buildpower/s, stored pre-scaled)
+		case hashString("bpRepairSpeed"):
+		case hashString("bpBuildSpeed"):
+		case hashString("bpReclaimSpeed"):
+		case hashString("bpCaptureSpeed"):
+		case hashString("bpResurrectSpeed"): {
+			if (!weapon->weaponDef->IsBuildPowerWeapon())
+				return false;
+
+			CBuildPowerWeapon* bpw = static_cast<CBuildPowerWeapon*>(weapon);
+			const float value = lua_tofloat(L, index + 1) * INV_GAME_SPEED;
+
+			switch (hashString(lua_tolstring(L, index, nullptr))) {
+				case hashString("bpRepairSpeed"):    bpw->repairSpeed    = value; break;
+				case hashString("bpBuildSpeed"):     bpw->buildSpeed     = value; break;
+				case hashString("bpReclaimSpeed"):   bpw->reclaimSpeed   = value; break;
+				case hashString("bpCaptureSpeed"):   bpw->captureSpeed   = value; break;
+				case hashString("bpResurrectSpeed"): bpw->resurrectSpeed = value; break;
+			}
+		} break;
+
 		default: {
 			return false;
 		} break;
@@ -3616,6 +3647,78 @@ int LuaSyncedCtrl::SetUnitTarget(lua_State* L)
 	return 0;
 }
 
+
+
+/***
+ * Sets the target and action for a BuildPower weapon on a unit.
+ *
+ * @function Spring.SetUnitBuildPowerTarget
+ * @param unitID integer
+ * @param weaponNum number 1-indexed weapon slot
+ * @param targetID integer|nil unitID for units, featureID + Game.maxUnits for features, nil to clear
+ * @param action number? one of BP_NONE, BP_REPAIR, BP_BUILD, BP_RECLAIM, BP_CAPTURE, BP_RESURRECT
+ * @return boolean success
+ */
+int LuaSyncedCtrl::SetUnitBuildPowerTarget(lua_State* L)
+{
+	CUnit* unit = ParseUnit(L, __func__, 1);
+
+	if (unit == nullptr)
+		return 0;
+
+	const size_t weaponNum = luaL_checkint(L, 2) - LUA_WEAPON_BASE_INDEX;
+
+	if (weaponNum >= unit->weapons.size()) {
+		lua_pushboolean(L, false);
+		return 1;
+	}
+
+	CWeapon* weapon = unit->weapons[weaponNum];
+
+	if (!weapon->weaponDef->IsBuildPowerWeapon()) {
+		lua_pushboolean(L, false);
+		return 1;
+	}
+
+	CBuildPowerWeapon* bpw = static_cast<CBuildPowerWeapon*>(weapon);
+
+	// nil targetID = clear
+	if (lua_isnil(L, 3)) {
+		bpw->ClearBuildPowerCommand();
+		lua_pushboolean(L, true);
+		return 1;
+	}
+
+	const unsigned int targetID = luaL_checkint(L, 3);
+	const int action = luaL_optint(L, 4, CBuildPowerWeapon::BP_None);
+
+	if (targetID >= unitHandler.MaxUnits()) {
+		// feature target
+		CFeature* feature = featureHandler.GetFeature(targetID - unitHandler.MaxUnits());
+
+		if (feature == nullptr) {
+			lua_pushboolean(L, false);
+			return 1;
+		}
+
+		bpw->SetBuildPowerCommand(feature, action);
+		lua_pushboolean(L, true);
+		return 1;
+	}
+	else {
+		// unit target
+		CUnit* target = unitHandler.GetUnit(targetID);
+
+		if (target == nullptr || target == unit) {
+			lua_pushboolean(L, false);
+			return 1;
+		}
+
+		bpw->SetBuildPowerCommand(target, action);
+		lua_pushboolean(L, true);
+		return 1;
+	}
+}
 
 
 /***

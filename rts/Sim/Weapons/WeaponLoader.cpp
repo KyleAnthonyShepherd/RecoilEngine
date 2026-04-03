@@ -18,6 +18,7 @@
 #include "Rifle.h"
 #include "StarburstLauncher.h"
 #include "TorpedoLauncher.h"
+#include "BuildPowerWeapon.h"
 
 #include "Game/TraceRay.h" // Collision::*
 #include "Sim/Misc/DamageArray.h"
@@ -140,7 +141,14 @@ CWeapon* CWeaponLoader::LoadWeapon(CUnit* owner, const WeaponDef* weaponDef)
 			}
 		} break;
 
-		case 'B': { return (weaponMemPool.alloc<CBeamLaser>(owner, weaponDef)); } break; // "BeamLaser"
+		case 'B': {
+			// "BeamLaser" or "BuildPower"
+			switch (weaponDef->type[1]) {
+			case 'e': { return (weaponMemPool.alloc<CBeamLaser>(owner, weaponDef)); } break;
+			case 'u': { return (weaponMemPool.alloc<CBuildPowerWeapon>(owner, weaponDef)); } break;
+			}
+		} break;
+		
 		case 'E': { return (weaponMemPool.alloc<CEmgCannon>(owner, weaponDef)); } break; // "EmgCannon"
 		case 'D': {
 			// "DGun"

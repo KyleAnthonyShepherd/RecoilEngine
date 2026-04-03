@@ -1041,7 +1041,7 @@ bool CWeapon::TestTarget(const float3& tgtPos, const SWeaponTarget& trg) const
 			if (!trg.isUserTarget && trg.unit->IsNeutral() && owner->fireState < FIRESTATE_FIREATNEUTRAL)
 				return false;
 			// don't fire at allied targets
-			if (!trg.isUserTarget && teamHandler.Ally(owner->allyteam, trg.unit->allyteam))
+			if (!trg.isUserTarget && teamHandler.Ally(owner->allyteam, trg.unit->allyteam) && !weaponDef->canTargetAllies)
 				return false;
 
 			if (trg.unit->GetTransporter() != nullptr) {

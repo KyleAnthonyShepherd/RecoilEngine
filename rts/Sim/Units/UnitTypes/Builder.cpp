@@ -16,6 +16,7 @@
 #include "Sim/Misc/GroundBlockingObjectMap.h"
 #include "Sim/Misc/ModInfo.h"
 #include "Sim/Misc/TeamHandler.h"
+#include "Sim/Misc/BuildActions.h"
 #include "Sim/MoveTypes/MoveDefHandler.h"
 #include "Sim/MoveTypes/MoveType.h"
 #include "Sim/Projectiles/ProjectileHandler.h"
@@ -60,12 +61,12 @@ CR_REG_METADATA(CBuilder, (
 	CR_MEMBER(terraformRadius),
 	CR_MEMBER(terraformType),
 	CR_MEMBER(nanoPieceCache)
-))
+	))
 
 
-//////////////////////////////////////////////////////////////////////
-// Construction/Destruction
-//////////////////////////////////////////////////////////////////////
+	//////////////////////////////////////////////////////////////////////
+	// Construction/Destruction
+	//////////////////////////////////////////////////////////////////////
 
 CBuilder::CBuilder():
 	CUnit(),
@@ -199,7 +200,7 @@ bool CBuilder::UpdateTerraform(const Command&)
 				}
 			}
 		}
-	};
+		};
 
 	switch (terraformType) {
 	case Terraform_Building: {
@@ -404,43 +405,32 @@ bool CBuilder::UpdateResurrect(const Command& fCommand)
 		return true;
 	}
 
-	if ((modInfo.reclaimMethod != 1) && (curResurrectee->reclaimLeft < 1)) {
-		// this corpse has been reclaimed a little, need to restore
-		// its resources before we can let the player resurrect it
-		curResurrectee->AddBuildPower(this, resurrectSpeed);
+	CUnit* resurrectee = nullptr;
+	const auto result = BuildActions::ApplyResurrectStep(this, curResurrectee, resurrectSpeed, &resurrectee);
+
+	switch (result) {
+	case BuildActions::ResurrectResult::Restoring:
+		// nano visual while restoring reclaimed corpse
 		return true;
-	}
 
-	const UnitDef* resurrecteeDef = curResurrectee->udef;
-
-	// corpse has been restored, begin resurrection
-	const float step = resurrectSpeed / resurrecteeDef->buildTime;
-
-	const bool resurrectAllowed = eventHandler.AllowFeatureBuildStep(this, curResurrectee, step);
-	const bool canExecResurrect = (resurrectAllowed && UseResources(resurrecteeDef->cost * step * modInfo.resurrectCostFactor));
-
-	if (canExecResurrect) {
-		curResurrectee->resurrectProgress += step;
-		curResurrectee->resurrectProgress = std::min(curResurrectee->resurrectProgress, 1.0f);
-
+	case BuildActions::ResurrectResult::InProgress:
 		CreateNanoParticle(curResurrectee->midPos, curResurrectee->radius * 0.7f, gsRNG.NextInt(2));
-	}
-
-	if (curResurrectee->resurrectProgress < 1.0f)
 		return true;
 
-	if (!curResurrectee->deleteMe) {
-		// resurrect finished and we are the first
-		curResurrectee->UnBlock();
+	case BuildActions::ResurrectResult::Blocked:
+		return true;
 
-		UnitLoadParams resurrecteeParams = {resurrecteeDef, this, curResurrectee->pos, ZeroVector, -1, team, curResurrectee->buildFacing, false, false};
-		CUnit* resurrectee = unitLoader->LoadUnit(resurrecteeParams);
+	case BuildActions::ResurrectResult::InvalidTarget:
+		StopBuild(true);
+		return true;
 
-		assert(resurrecteeDef == resurrectee->unitDef);
-		resurrectee->SetSoloBuilder(this, resurrecteeDef);
-		resurrectee->SetHeading(curResurrectee->heading, !resurrectee->upright && resurrectee->IsOnGround(), false, 0.0f);
+	case BuildActions::ResurrectResult::Completed:
+		break;
+	}
 
-		for (const int resurrecterID: CBuilderCaches::resurrecters) {
+	// Resurrect complete — update all other builders who were rezzing this corpse
+	if (resurrectee != nullptr) {
+		for (const int resurrecterID : CBuilderCaches::resurrecters) {
 			CBuilder* resurrecter = static_cast<CBuilder*>(unitHandler.GetUnit(resurrecterID));
 			CCommandAI* resurrecterCAI = resurrecter->commandAI;
 
@@ -499,37 +489,17 @@ bool CBuilder::UpdateCapture(const Command& fCommand)
 		return true;
 	}
 
-	const float captureMagicNumber = (150.0f + (curCapturee->buildTime / captureSpeed) * (curCapturee->health + curCapturee->maxHealth) / curCapturee->maxHealth * 0.4f);
-	const float captureProgressStep = 1.0f / captureMagicNumber;
-	const float captureProgressTemp = std::min(curCapturee->captureProgress + captureProgressStep, 1.0f);
+	const auto result = BuildActions::ApplyCaptureStep(this, curCapturee, captureSpeed);
 
-	const float captureFraction = captureProgressTemp - curCapturee->captureProgress;
-	const auto resourceUseScaled = curCapturee->cost * captureFraction * modInfo.captureCostFactor;
-
-	const bool buildStepAllowed = (eventHandler.AllowUnitBuildStep(this, curCapturee, captureProgressStep));
-	const bool captureStepAllowed = (eventHandler.AllowUnitCaptureStep(this, curCapturee, captureProgressStep));
-	const bool canExecCapture = (buildStepAllowed && captureStepAllowed && UseResources(resourceUseScaled));
-
-	if (!canExecCapture)
+	if (result == BuildActions::CaptureResult::Blocked)
 		return true;
-
-	curCapturee->captureProgress += captureProgressStep;
-	curCapturee->captureProgress = std::min(curCapturee->captureProgress, 1.0f);
 
 	CreateNanoParticle(curCapturee->midPos, curCapturee->radius * 0.7f, false, true);
 
-	if (curCapturee->captureProgress < 1.0f)
+	if (result == BuildActions::CaptureResult::InProgress)
 		return true;
 
-	if (!curCapturee->ChangeTeam(team, CUnit::ChangeCaptured)) {
-		// capture failed
-		if (team == gu->myTeam) {
-			LOG_L(L_WARNING, "%s: Capture failed, unit type limit reached", unitDef->humanName.c_str());
-			eventHandler.LastMessagePosition(pos);
-		}
-	}
-
-	curCapturee->captureProgress = 0.0f;
+	// Completed or Failed — either way we're done
 	StopBuild(true);
 	return true;
 }
@@ -542,7 +512,7 @@ void CBuilder::Update()
 	const CBuilderCAI* cai = static_cast<CBuilderCAI*>(commandAI);
 
 	const CCommandQueue& cQueue = cai->commandQue;
-	const Command& fCommand = (!cQueue.empty())? cQueue.front(): Command(CMD_STOP);
+	const Command& fCommand = (!cQueue.empty()) ? cQueue.front() : Command(CMD_STOP);
 
 	bool updated = false;
 
@@ -563,7 +533,7 @@ void CBuilder::Update()
 
 void CBuilder::SlowUpdate()
 {
-  RECOIL_DETAILED_TRACY_ZONE;
+	RECOIL_DETAILED_TRACY_ZONE;
 	if (terraforming) {
 		constexpr int tsr = TERRA_SMOOTHING_RADIUS;
 		mapDamage->RecalcArea(tx1 - tsr, tx2 + tsr, tz1 - tsr, tz2 + tsr);
@@ -742,7 +712,7 @@ bool CBuilder::StartBuild(BuildInfo& buildInfo, CFeature*& feature, bool& inWait
 		} else {
 			return (buildInfo.def->floatOnWater);
 		}
-	};
+		};
 
 	// Units that cannot be underwater need their build checks kept above water or else collision detections will
 	// produce the wrong results.
@@ -754,66 +724,66 @@ bool CBuilder::StartBuild(BuildInfo& buildInfo, CFeature*& feature, bool& inWait
 	const CGameHelper::BuildSquareStatus tbs = CGameHelper::TestUnitBuildSquare(buildInfo, feature, -1, true);
 
 	switch (tbs) {
-		case CGameHelper::BUILDSQUARE_OPEN:
-			break;
+	case CGameHelper::BUILDSQUARE_OPEN:
+		break;
 
-		case CGameHelper::BUILDSQUARE_BLOCKED:
-		case CGameHelper::BUILDSQUARE_OCCUPIED: {
-			const CUnit* u = nullptr;
+	case CGameHelper::BUILDSQUARE_BLOCKED:
+	case CGameHelper::BUILDSQUARE_OCCUPIED: {
+		const CUnit* u = nullptr;
 
-			const int2 mins = CSolidObject::GetMapPosStatic(buildInfo.pos, buildInfo.GetXSize(), buildInfo.GetZSize());
-			const int2 maxs = mins + int2(buildInfo.GetXSize(), buildInfo.GetZSize());
+		const int2 mins = CSolidObject::GetMapPosStatic(buildInfo.pos, buildInfo.GetXSize(), buildInfo.GetZSize());
+		const int2 maxs = mins + int2(buildInfo.GetXSize(), buildInfo.GetZSize());
 
-			for (int z = mins.y; z < maxs.y; ++z) {
-				for (int x = mins.x; x < maxs.x; ++x) {
-					const CGroundBlockingObjectMap::BlockingMapCell& cell = groundBlockingObjectMap.GetCellUnsafeConst(float3{
-						static_cast<float>(x * SQUARE_SIZE),
-						0.0f,
-						static_cast<float>(z * SQUARE_SIZE) }
+		for (int z = mins.y; z < maxs.y; ++z) {
+			for (int x = mins.x; x < maxs.x; ++x) {
+				const CGroundBlockingObjectMap::BlockingMapCell& cell = groundBlockingObjectMap.GetCellUnsafeConst(float3{
+					static_cast<float>(x * SQUARE_SIZE),
+					0.0f,
+					static_cast<float>(z * SQUARE_SIZE) }
 					);
 
-					// look for any blocking assistable buildee at build.pos
-					for (size_t i = 0, n = cell.size(); i < n; i++) {
-						const CUnit* cu = dynamic_cast<const CUnit*>(cell[i]);
+				// look for any blocking assistable buildee at build.pos
+				for (size_t i = 0, n = cell.size(); i < n; i++) {
+					const CUnit* cu = dynamic_cast<const CUnit*>(cell[i]);
 
-						if (cu == nullptr)
-							continue;
-						if (allyteam != cu->allyteam)
-							return false; // Enemy units that block always block the cell
-						if (!CanAssistUnit(cu, buildInfo.def))
-							continue;
+					if (cu == nullptr)
+						continue;
+					if (allyteam != cu->allyteam)
+						return false; // Enemy units that block always block the cell
+					if (!CanAssistUnit(cu, buildInfo.def))
+						continue;
 
-						u = cu;
-						goto out; //lol
-					}
+					u = cu;
+					goto out; //lol
 				}
 			}
+		}
 
-			out:
-			// <pos> might map to a non-blocking portion
-			// of the buildee's yardmap, fallback check
-			if (u == nullptr)
-				u = CGameHelper::GetClosestFriendlyUnit(nullptr, buildInfo.pos, buildDistance, allyteam);
+	out:
+		// <pos> might map to a non-blocking portion
+		// of the buildee's yardmap, fallback check
+		if (u == nullptr)
+			u = CGameHelper::GetClosestFriendlyUnit(nullptr, buildInfo.pos, buildDistance, allyteam);
 
-			if (u != nullptr) {
-				if (CanAssistUnit(u, buildInfo.def)) {
-					// StopBuild sets this to false, fix it here if picking up the same buildee again
-					terraforming = (u == prvBuild && u->terraformLeft > 0.0f);
+		if (u != nullptr) {
+			if (CanAssistUnit(u, buildInfo.def)) {
+				// StopBuild sets this to false, fix it here if picking up the same buildee again
+				terraforming = (u == prvBuild && u->terraformLeft > 0.0f);
 
-					AddDeathDependence(curBuild = const_cast<CUnit*>(u), DEPENDENCE_BUILD);
-					ScriptStartBuilding(u->pos, false);
-					return true;
-				}
-
-				// let BuggerOff handle this case (TODO: non-landed aircraft should not count)
-				if (buildInfo.FootPrintOverlap(u->pos, u->GetFootPrint(SQUARE_SIZE * 0.5f)))
-					return false;
+				AddDeathDependence(curBuild = const_cast<CUnit*>(u), DEPENDENCE_BUILD);
+				ScriptStartBuilding(u->pos, false);
+				return true;
 			}
-		} return false;
 
-		case CGameHelper::BUILDSQUARE_RECLAIMABLE:
-			// caller should handle this
-			return false;
+			// let BuggerOff handle this case (TODO: non-landed aircraft should not count)
+			if (buildInfo.FootPrintOverlap(u->pos, u->GetFootPrint(SQUARE_SIZE * 0.5f)))
+				return false;
+		}
+	} return false;
+
+	case CGameHelper::BUILDSQUARE_RECLAIMABLE:
+		// caller should handle this
+		return false;
 	}
 
 	// at this point we know the builder is going to create a new unit, bail if at the limit

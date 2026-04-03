@@ -221,6 +221,26 @@ public:
 
 	float cameraShake;
 
+	// BuildPower weapon fields
+	// Speeds: if > 0, override owner UnitDef speeds. In elmos/frame (pre-scaled by INV_GAME_SPEED).
+	float bpRepairSpeed = 0.0f;
+	float bpBuildSpeed = 0.0f;
+	float bpReclaimSpeed = 0.0f;
+	float bpCaptureSpeed = 0.0f;
+	float bpResurrectSpeed = 0.0f;
+	
+	// action flags: which actions the weapon can perform
+	bool bpCanRepair = true;
+	bool bpCanBuild = true;
+	bool bpCanReclaim = true;
+	bool bpCanCapture = false;
+	bool bpCanResurrect = true;
+	
+	bool IsBuildPowerWeapon() const { return (type == "BuildPower"); }
+	
+	bool canTargetAllies = false;  // if true, TestTarget does not reject allied units
+	
+
 	spring::unordered_map<std::string, std::string> customParams;
 
 	struct Visuals {

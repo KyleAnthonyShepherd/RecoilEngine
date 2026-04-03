@@ -25,6 +25,7 @@
 #include "Sim/Units/UnitHandler.h"
 #include "Sim/Weapons/Weapon.h"
 #include "Sim/Weapons/WeaponDef.h"
+#include "Sim/Weapons/BuildPowerWeapon.h"
 #include "System/EventHandler.h"
 #include "System/SpringMath.h"
 #include "System/Log/ILog.h"
@@ -368,6 +369,57 @@ CCommandAI::CCommandAI(CUnit* owner):
 	}
 
 	UpdateNonQueueingCommands();
+
+	// Register build-power commands for non-builder units with BuildPower weapons
+	// (BuilderCAI handles this for actual builders)
+	if (!owner->unitDef->builder) {
+		CBuildPowerWeapon* bpw = CBuildPowerWeapon::GetBuildPowerWeapon(owner);
+
+		if (bpw != nullptr) {
+			const WeaponDef* bpDef = bpw->weaponDef;
+
+			if (bpDef->bpCanRepair) {
+				SCommandDescription c;
+				c.id   = CMD_REPAIR;
+				c.type = CMDTYPE_ICON_UNIT_OR_AREA;
+				c.action    = "repair";
+				c.name      = "Repair";
+				c.tooltip   = c.name + ": Repairs another unit";
+				c.mouseicon = c.name;
+				possibleCommands.push_back(commandDescriptionCache.GetPtr(std::move(c)));
+			}
+			if (bpDef->bpCanReclaim) {
+				SCommandDescription c;
+				c.id   = CMD_RECLAIM;
+				c.type = CMDTYPE_ICON_UNIT_FEATURE_OR_AREA;
+				c.action    = "reclaim";
+				c.name      = "Reclaim";
+				c.tooltip   = c.name + ": Reclaims a unit or feature";
+				c.mouseicon = c.name;
+				possibleCommands.push_back(commandDescriptionCache.GetPtr(std::move(c)));
+			}
+			if (bpDef->bpCanResurrect) {
+				SCommandDescription c;
+				c.id   = CMD_RESURRECT;
+				c.type = CMDTYPE_ICON_UNIT_FEATURE_OR_AREA;
+				c.action    = "resurrect";
+				c.name      = "Resurrect";
+				c.tooltip   = c.name + ": Resurrects a unit from a feature";
+				c.mouseicon = c.name;
+				possibleCommands.push_back(commandDescriptionCache.GetPtr(std::move(c)));
+			}
+			if (bpDef->bpCanCapture) {
+				SCommandDescription c;
+				c.id   = CMD_CAPTURE;
+				c.type = CMDTYPE_ICON_UNIT_OR_AREA;
+				c.action    = "capture";
+				c.name      = "Capture";
+				c.tooltip   = c.name + ": Captures an enemy unit";
+				c.mouseicon = c.name;
+				possibleCommands.push_back(commandDescriptionCache.GetPtr(std::move(c)));
+			}
+		}
+	}
 }
 
 CCommandAI::~CCommandAI()
@@ -730,8 +782,9 @@ bool CCommandAI::AllowedCommand(const Command& c, bool fromSynced)
 
 		case CMD_CAPTURE: {
 			const CUnit* capturee = GetCommandUnit(c, 0);
+			const CBuildPowerWeapon* bpw = CBuildPowerWeapon::GetBuildPowerWeapon(owner);
 
-			if (!ud->canCapture)
+			if (!ud->canCapture && !(bpw != nullptr && bpw->weaponDef->bpCanCapture))
 				return false;
 			if (capturee != nullptr && !capturee->pos.IsInBounds())
 				return false;
@@ -740,10 +793,11 @@ bool CCommandAI::AllowedCommand(const Command& c, bool fromSynced)
 		case CMD_RECLAIM: {
 			const CUnit* reclaimeeUnit = GetCommandUnit(c, 0);
 			const CFeature* reclaimeeFeature = nullptr;
+			const CBuildPowerWeapon* bpw = CBuildPowerWeapon::GetBuildPowerWeapon(owner);
 
 			if (c.IsAreaCommand())
 				return true;
-			if (!ud->canReclaim)
+			if (!ud->canReclaim && !(bpw != nullptr && bpw->weaponDef->bpCanReclaim))
 				return false;
 
 			if (reclaimeeUnit != nullptr) {
@@ -771,19 +825,26 @@ bool CCommandAI::AllowedCommand(const Command& c, bool fromSynced)
 		} break;
 
 		case CMD_RESURRECT: {
-			if (!ud->canResurrect)
+			const CBuildPowerWeapon* bpw = CBuildPowerWeapon::GetBuildPowerWeapon(owner);
+
+			if (!ud->canResurrect && !(bpw != nullptr && bpw->weaponDef->bpCanResurrect))
 				return false;
 		} break;
 
 		case CMD_REPAIR: {
 			const CUnit* repairee = GetCommandUnit(c, 0);
+			const CBuildPowerWeapon* bpw = CBuildPowerWeapon::GetBuildPowerWeapon(owner);
+			const bool hasBpRepair = (bpw != nullptr && bpw->weaponDef->bpCanRepair);
+			const bool hasBpBuild  = (bpw != nullptr && bpw->weaponDef->bpCanBuild);
 
-			if (!ud->canRepair && !ud->canAssist)
+			if (!ud->canRepair && !ud->canAssist && !hasBpRepair && !hasBpBuild)
 				return false;
 
 			if (repairee != nullptr && !repairee->pos.IsInBounds())
 				return false;
-			if (repairee != nullptr && ((repairee->beingBuilt && !ud->canAssist) || (!repairee->beingBuilt && !ud->canRepair)))
+			if (repairee != nullptr && repairee->beingBuilt && !ud->canAssist && !hasBpBuild)
+				return false;
+			if (repairee != nullptr && !repairee->beingBuilt && !ud->canRepair && !hasBpRepair)
 				return false;
 		} break;
 	}
@@ -1537,7 +1598,115 @@ void CCommandAI::ExecuteStop(Command& c)
 		w->DropCurrentTarget();
 	}
 
+	// Also clear any active BuildPower command
+	CBuildPowerWeapon* bpw = CBuildPowerWeapon::GetBuildPowerWeapon(owner);
+	if (bpw != nullptr)
+		bpw->ClearBuildPowerCommand();
+
 	FinishCommand();
+}
+
+
+void CCommandAI::ExecuteBuildPowerCommand(Command& c)
+{
+	RECOIL_DETAILED_TRACY_ZONE;
+	CBuildPowerWeapon* bpw = CBuildPowerWeapon::GetBuildPowerWeapon(owner);
+
+	if (bpw == nullptr) {
+		FinishCommand();
+		return;
+	}
+
+	const int cmdID = c.GetID();
+
+	// Map command ID to BuildPower action
+	int bpAction = CBuildPowerWeapon::BP_None;
+	switch (cmdID) {
+		case CMD_REPAIR:    bpAction = CBuildPowerWeapon::BP_Repair;    break;
+		case CMD_RECLAIM:   bpAction = CBuildPowerWeapon::BP_Reclaim;   break;
+		case CMD_CAPTURE:   bpAction = CBuildPowerWeapon::BP_Capture;   break;
+		case CMD_RESURRECT: bpAction = CBuildPowerWeapon::BP_Resurrect; break;
+		default: {
+			FinishCommand();
+			return;
+		}
+	}
+
+	if (c.GetNumParams() == 1 || c.GetNumParams() == 5) {
+		const unsigned int targetID = c.GetParam(0);
+
+		if (targetID < unitHandler.MaxUnits()) {
+			// Unit target
+			CUnit* targetUnit = unitHandler.GetUnit(targetID);
+
+			if (targetUnit == nullptr || targetUnit->isDead) {
+				bpw->ClearBuildPowerCommand();
+				FinishCommand();
+				return;
+			}
+
+			if (inCommand != cmdID) {
+				SetOrderTarget(targetUnit);
+				bpw->SetBuildPowerCommand(targetUnit, bpAction);
+				inCommand = cmdID;
+			}
+
+			// Check if action is still valid
+			if (bpw->DetermineActionUnit(targetUnit) == CBuildPowerWeapon::BP_None) {
+				bpw->ClearBuildPowerCommand();
+				FinishCommand();
+				return;
+			}
+
+			// Check range (weapon handles the actual application)
+			//const float sqDist = owner->pos.SqDistance(targetUnit->pos);
+			//if (sqDist > bpw->range * bpw->range * 1.1f) {
+				// out of range — for static buildings, just finish
+				// (mobile units would use MobileCAI to move in range)
+			//	if (!owner->unitDef->canmove) {
+			//		bpw->ClearBuildPowerCommand();
+			//		FinishCommand();
+			//	}
+			//	return;
+			//}
+		} else {
+			// Feature target
+			CFeature* targetFeature = featureHandler.GetFeature(targetID - unitHandler.MaxUnits());
+
+			if (targetFeature == nullptr || targetFeature->deleteMe) {
+				bpw->ClearBuildPowerCommand();
+				FinishCommand();
+				return;
+			}
+
+			if (inCommand != cmdID) {
+				bpw->SetBuildPowerCommand(targetFeature, bpAction);
+				inCommand = cmdID;
+			}
+
+			// Check if action is still valid
+			if (bpw->DetermineActionFeature(targetFeature) == CBuildPowerWeapon::BP_None) {
+				bpw->ClearBuildPowerCommand();
+				FinishCommand();
+				return;
+			}
+
+			//const float sqDist = owner->pos.SqDistance(targetFeature->pos);
+			//if (sqDist > bpw->range * bpw->range * 1.1f) {
+			//	if (!owner->unitDef->canmove) {
+			//		bpw->ClearBuildPowerCommand();
+			//		FinishCommand();
+			//	}
+			//	return;
+			//}
+		}
+	} else if (c.GetNumParams() == 4) {
+		// Area command — let auto-targeting handle it within the area
+		// TODO: area build-power commands
+		FinishCommand();
+	} else {
+		FinishCommand();
+	}
 }
 
 
@@ -1577,6 +1746,15 @@ void CCommandAI::SlowUpdate()
 			ExecuteAttack(c);
 			return;
 		}
+
+		case CMD_REPAIR:
+		case CMD_RECLAIM:
+		case CMD_CAPTURE:
+		case CMD_RESURRECT: {
+			// For non-builder units with BuildPower weapons, route build commands here.
+			ExecuteBuildPowerCommand(c);
+			return;
+		}
 	}
 
 	if (ExecuteStateCommand(c)) {
@@ -1595,11 +1773,35 @@ void CCommandAI::SlowUpdate()
 int CCommandAI::GetDefaultCmd(const CUnit* pointed, const CFeature* feature)
 {
 	RECOIL_DETAILED_TRACY_ZONE;
+	const CBuildPowerWeapon* bpw = CBuildPowerWeapon::GetBuildPowerWeapon(owner);
+
 	if (pointed != nullptr) {
 		if (!teamHandler.Ally(gu->myAllyTeam, pointed->allyteam)) {
 			if (IsAttackCapable())
 				return CMD_ATTACK;
+			// BuildPower: default to capture or reclaim for enemies
+			if (bpw != nullptr) {
+				if (bpw->weaponDef->bpCanCapture && pointed->unitDef->capturable)
+					return CMD_CAPTURE;
+				if (bpw->weaponDef->bpCanReclaim)
+					return CMD_RECLAIM;
+			}
+		} else {
+			// BuildPower: default to repair for damaged allies, assist for building allies
+			if (bpw != nullptr) {
+				if (pointed->beingBuilt && bpw->weaponDef->bpCanBuild)
+					return CMD_REPAIR;
+				if (pointed->health < pointed->maxHealth && bpw->weaponDef->bpCanRepair)
+					return CMD_REPAIR;
+			}
 		}
+	}
+
+	if (feature != nullptr && bpw != nullptr) {
+		if (feature->udef != nullptr && feature->def->resurrectable != 0 && bpw->weaponDef->bpCanResurrect)
+			return CMD_RESURRECT;
+		if (feature->def->reclaimable && bpw->weaponDef->bpCanReclaim)
+			return CMD_RECLAIM;
 	}
 
 	return CMD_STOP;

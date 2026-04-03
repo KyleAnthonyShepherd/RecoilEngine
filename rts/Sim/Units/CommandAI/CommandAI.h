@@ -90,6 +90,11 @@ public:
 	virtual void ExecuteAttack(Command& c);
 
 	/**
++	 * @brief executes a build-power command (repair/reclaim/capture/resurrect) via BuildPower weapon
++	 */
+	virtual void ExecuteBuildPowerCommand(Command & c);
+
+	/**
 	 * @brief executes the stop command c
 	 */
 	virtual void ExecuteStop(Command& c);
