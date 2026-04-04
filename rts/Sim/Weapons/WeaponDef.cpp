@@ -552,14 +552,6 @@ WeaponDef::WeaponDef(const LuaTable& wdTable, const std::string& name_, int id_)
 				projectileType = WEAPON_EXPLOSIVE_PROJECTILE;
 				defInterceptType = 8;
 			} break;
-			case hashString("BuildPower"): {
-				canTargetAllies = true;
-				// no projectile to block
-				avoidFriendly = false;
-				avoidFeature = false;
-				avoidNeutral = false;
-				avoidGround = false;
-			} break;
 			default: {
 			} break;
 		}

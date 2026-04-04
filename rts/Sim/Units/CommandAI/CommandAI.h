@@ -143,6 +143,8 @@ protected:
 	bool HandleBuildOptionRemoval(int cmdId);
 	// return true by default so non-AirCAI's trigger FinishCommand
 	virtual bool SelectNewAreaAttackTargetOrPos(const Command& ac) { return true; }
+	
+	virtual void OnSetBuildPowerCommand(const CUnit* o) {}
 
 	bool IsAttackCapable() const;
 	bool SkipParalyzeTarget(const CUnit* target) const;

@@ -124,6 +124,8 @@ protected:
 
 	void CalculateCancelDistance();
 
+	void OnSetBuildPowerCommand(const CUnit* o) override;
+
 private:
 	void ExecuteObjectAttack(Command& c);
 	void ExecuteGroundAttack(Command& c);

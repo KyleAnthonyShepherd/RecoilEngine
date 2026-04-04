@@ -1654,18 +1654,19 @@ void CCommandAI::ExecuteBuildPowerCommand(Command& c)
 				return;
 			}
 
-			if (inCommand != cmdID) {
+			//if (inCommand != cmdID) {
 				SetOrderTarget(targetUnit);
 				bpw->SetBuildPowerCommand(targetUnit, bpAction);
+				OnSetBuildPowerCommand(targetUnit);
 				inCommand = cmdID;
-			}
+			//}
 
 			// Check if action is still valid
-			if (bpw->DetermineActionUnit(targetUnit) == CBuildPowerWeapon::BP_None) {
-				bpw->ClearBuildPowerCommand();
-				FinishCommand();
-				return;
-			}
+			//if (bpw->DetermineActionUnit(targetUnit) == CBuildPowerWeapon::BP_None) {
+			//	bpw->ClearBuildPowerCommand();
+			//	FinishCommand();
+			//	return;
+			//}
 
 			// Check range (weapon handles the actual application)
 			//const float sqDist = owner->pos.SqDistance(targetUnit->pos);
@@ -1694,11 +1695,11 @@ void CCommandAI::ExecuteBuildPowerCommand(Command& c)
 			}
 
 			// Check if action is still valid
-			if (bpw->DetermineActionFeature(targetFeature) == CBuildPowerWeapon::BP_None) {
-				bpw->ClearBuildPowerCommand();
-				FinishCommand();
-				return;
-			}
+			//if (bpw->DetermineActionFeature(targetFeature) == CBuildPowerWeapon::BP_None) {
+			//	bpw->ClearBuildPowerCommand();
+			//	FinishCommand();
+			//	return;
+			//}
 
 			//const float sqDist = owner->pos.SqDistance(targetFeature->pos);
 			//if (sqDist > bpw->range * bpw->range * 1.1f) {

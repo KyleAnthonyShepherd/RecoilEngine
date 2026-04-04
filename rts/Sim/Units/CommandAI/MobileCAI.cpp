@@ -604,6 +604,10 @@ bool CMobileCAI::IsValidTarget(const CUnit* enemy, CWeapon* weapon) const {
 	return false;
 }
 
+void CMobileCAI::OnSetBuildPowerCommand(const CUnit* o) {
+	SetGoal(o->pos, owner->pos, owner->maxRange * 0.9f);
+}
+
 /**
 * @brief Executes the guard command c
 */
@@ -1196,7 +1200,7 @@ bool CMobileCAI::MobileAutoGenerateTarget()
 bool CMobileCAI::GenerateAttackCmd()
 {
 	RECOIL_DETAILED_TRACY_ZONE;
-	if (!owner->unitDef->canAttack)
+	if (!owner->unitDef->CanAttack())
 		return false;
 
 	if (owner->weapons.empty())
