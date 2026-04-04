@@ -16,6 +16,7 @@
 #define PH_UNSYNCED_PROJECTILE_EVENTS 0
 
 class CProjectile;
+class CSolidObject;
 class CUnit;
 class CFeature;
 class CPlasmaRepulser;
@@ -76,8 +77,8 @@ public:
 		const float2 pieceParams,
 		const int2 renderParams
 	);
-	void AddNanoParticle(const float3, const float3, const UnitDef*, int team, bool highPriority);
-	void AddNanoParticle(const float3, const float3, const UnitDef*, int team, float radius, bool inverse, bool highPriority);
+	void AddNanoParticle(const float3, const float3, const UnitDef*, int team, bool highPriority, CSolidObject* trackTarget = nullptr);
+	void AddNanoParticle(const float3, const float3, const UnitDef*, int team, float radius, bool inverse, bool highPriority, CSolidObject* trackTarget = nullptr);
 
 public:
 	int maxParticles = 0;

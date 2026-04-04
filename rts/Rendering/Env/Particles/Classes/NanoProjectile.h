@@ -6,6 +6,8 @@
 #include "Sim/Projectiles/Projectile.h"
 #include "System/Color.h"
 
+class CSolidObject;
+
 class CNanoProjectile : public CProjectile
 {
 	CR_DECLARE_DERIVED(CNanoProjectile)
@@ -19,9 +21,13 @@ public:
 	void Draw() override;
 	void DrawOnMinimap() const override;
 
+	void DependentDied(CObject* o) override;
+
 	int GetProjectilesCount() const override;
 
 	static bool GetMemberInfo(SExpGenSpawnableMemberInfo& memberInfo);
+
+	void SetTarget(CSolidObject* obj);
 
 private:
 	float rotAcc = 0.0f;
@@ -29,6 +35,10 @@ private:
 	float rotVal0x = 0.0f;
 	float rotVel0x = 0.0f;
 	float rotAcc0x = 0.0f;
+
+	CSolidObject* trackingTarget = nullptr;
+	float3 targetPos;
+
 public:
 	static inline float rotVal0 = 0.0f;
 	static inline float rotVel0 = 0.0f;

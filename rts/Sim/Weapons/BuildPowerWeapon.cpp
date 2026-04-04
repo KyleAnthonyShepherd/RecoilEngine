@@ -171,21 +171,21 @@ void CBuildPowerWeapon::ApplyBuildPowerUnit(CUnit* target, int action)
 				break;
 
 			if (target->AddBuildPower(owner, adjSpeed))
-				CreateBuildPowerVisual(target->midPos, target->radius * 0.5f, false);
+				CreateBuildPowerVisual(target->midPos, target->radius * 0.5f, false, target);
 		} break;
 
 		case BP_Build: {
 			const float speed = buildSpeed;
 
 			if (target->AddBuildPower(owner, speed))
-				CreateBuildPowerVisual(target->midPos, target->radius * 0.5f, false);
+				CreateBuildPowerVisual(target->midPos, target->radius * 0.5f, false, target);
 		} break;
 
 		case BP_Reclaim: {
 			const float speed = reclaimSpeed;
 
 			if (target->AddBuildPower(owner, -speed))
-				CreateBuildPowerVisual(target->midPos, target->radius * 0.7f, true);
+				CreateBuildPowerVisual(target->midPos, target->radius * 0.7f, true, target);
 		} break;
 
 		case BP_Capture: {
@@ -197,7 +197,7 @@ void CBuildPowerWeapon::ApplyBuildPowerUnit(CUnit* target, int action)
 			const auto result = BuildActions::ApplyCaptureStep(owner, target, captSpeed);
 
 			if (result == BuildActions::CaptureResult::InProgress || result == BuildActions::CaptureResult::Completed)
-				CreateBuildPowerVisual(target->midPos, target->radius * 0.7f, false);
+				CreateBuildPowerVisual(target->midPos, target->radius * 0.7f, false, target);
 		} break;
 
 		default: break;
@@ -213,7 +213,7 @@ void CBuildPowerWeapon::ApplyBuildPowerFeature(CFeature* target, int action)
 			const float speed = reclaimSpeed;
 
 			if (target->AddBuildPower(owner, -speed))
-				CreateBuildPowerVisual(target->midPos, target->radius * 0.7f, true);
+				CreateBuildPowerVisual(target->midPos, target->radius * 0.7f, true, target);
 
 			// Feature may have been deleted by AddBuildPower
 			if (target->deleteMe)
@@ -233,10 +233,10 @@ void CBuildPowerWeapon::ApplyBuildPowerFeature(CFeature* target, int action)
 
 			switch (result) {
 				case BuildActions::ResurrectResult::Restoring:
-					CreateBuildPowerVisual(target->midPos, target->radius * 0.7f, false);
+					CreateBuildPowerVisual(target->midPos, target->radius * 0.7f, false, target);
 					break;
 				case BuildActions::ResurrectResult::InProgress:
-					CreateBuildPowerVisual(target->midPos, target->radius * 0.7f, (gsRNG.NextInt(2) != 0));
+					CreateBuildPowerVisual(target->midPos, target->radius * 0.7f, (gsRNG.NextInt(2) != 0), target);
 					break;
 				case BuildActions::ResurrectResult::Completed:
 					ClearFeatureTarget();
@@ -258,9 +258,9 @@ void CBuildPowerWeapon::ApplyBuildPowerFeature(CFeature* target, int action)
 // Nano-particle visual from weapon muzzle
 // ============================================================================
 
-void CBuildPowerWeapon::CreateBuildPowerVisual(const float3& targetPos, float radius, bool inverse)
+void CBuildPowerWeapon::CreateBuildPowerVisual(const float3& targetPos, float radius, bool inverse, CSolidObject* trackTarget)
 {
-	projectileHandler.AddNanoParticle(weaponMuzzlePos, targetPos, owner->unitDef, owner->team, radius, inverse, false);
+	projectileHandler.AddNanoParticle(weaponMuzzlePos, targetPos, owner->unitDef, owner->team, radius, inverse, false, trackTarget);
 }
 
 

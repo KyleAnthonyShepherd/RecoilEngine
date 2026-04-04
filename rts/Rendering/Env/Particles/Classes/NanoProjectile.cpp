@@ -11,6 +11,7 @@
 #include "Rendering/GlobalRendering.h"
 #include "Game/GlobalUnsynced.h"
 #include "Sim/Misc/GlobalSynced.h"
+#include "Sim/Objects/SolidObject.h"
 #include "Sim/Projectiles/ExpGenSpawnableMemberInfo.h"
 #include "Sim/Projectiles/ProjectileHandler.h"
 
@@ -24,6 +25,8 @@ CR_REG_METADATA(CNanoProjectile,
 	CR_MEMBER(rotVal0x),
 	CR_MEMBER(rotVel0x),
 	CR_MEMBER(rotAcc0x),
+	CR_MEMBER(trackingTarget),
+	CR_MEMBER(targetPos),
 	CR_MEMBER_BEGINFLAG(CM_Config),
 		CR_MEMBER(deathFrame),
 		CR_MEMBER(color),
@@ -71,9 +74,54 @@ CNanoProjectile::~CNanoProjectile()
 void CNanoProjectile::Update()
 {
 	RECOIL_DETAILED_TRACY_ZONE;
+
+	if (trackingTarget != nullptr) {
+		targetPos = trackingTarget->midPos;
+	}
+
+	// If we have a target position, steer toward it
+	if (targetPos != ZeroVector) {
+		const float3 dif = targetPos - pos;
+		const float dist = dif.Length();
+		const float spd = speed.Length();
+
+		if (dist > 1.0f && spd > 0.0f) {
+			const float3 desiredDir = dif / dist;
+			// Remaining frames of life
+			const int framesLeft = deathFrame - gs->frameNum;
+
+			if (framesLeft > 0) {
+				// Set speed to arrive at target by deathFrame
+				speed = dif / framesLeft;
+			} else {
+				speed = desiredDir * spd;
+			}
+		}
+	}
+
 	pos += speed;
 
 	deleteMe |= (gs->frameNum >= deathFrame);
+}
+
+
+void CNanoProjectile::SetTarget(CSolidObject* obj)
+{
+	if (obj == nullptr)
+		return;
+
+	trackingTarget = obj;
+	targetPos = obj->midPos;
+	AddDeathDependence(obj, DEPENDENCE_WEAPONTARGET);
+}
+
+
+void CNanoProjectile::DependentDied(CObject* o)
+{
+	if (o == trackingTarget)
+		trackingTarget = nullptr;
+
+	CProjectile::DependentDied(o);
 }
 
 void CNanoProjectile::Draw()

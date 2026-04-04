@@ -540,5 +540,5 @@ void CFactory::CreateNanoParticle(bool highPriority)
 	const float3 nanoPos = this->GetObjectSpacePos(relNanoFirePos);
 
 	// unsynced
-	projectileHandler.AddNanoParticle(nanoPos, curBuild->midPos, unitDef, team, highPriority);
+	projectileHandler.AddNanoParticle(nanoPos, curBuild->midPos, unitDef, team, highPriority, curBuild);
 }

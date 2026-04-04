@@ -6,6 +6,7 @@
 #include "Sim/Weapons/Weapon.h"
 
 class CFeature;
+class CSolidObject;
 
 class CBuildPowerWeapon : public CWeapon
 {
@@ -67,7 +68,7 @@ private:
 	void ApplyBuildPowerFeature(CFeature* target, int action);
 
 	/// Create nano-particle visual from weapon muzzle to target
-	void CreateBuildPowerVisual(const float3& targetPos, float radius, bool inverse);
+	void CreateBuildPowerVisual(const float3& targetPos, float radius, bool inverse, CSolidObject* trackTarget = nullptr);
 
 	/// Set the feature target (tracked separately from CWeapon::currentTarget)
 	void SetFeatureTarget(CFeature* f);

@@ -672,7 +672,8 @@ void CProjectileHandler::AddNanoParticle(
 	const float3 endPos,
 	const UnitDef* unitDef,
 	int teamNum,
-	bool highPriority
+	bool highPriority,
+	CSolidObject* trackTarget
 ) {
 	RECOIL_DETAILED_TRACY_ZONE;
 	const float priority = mix(NORMAL_NANO_PRIO, HIGH_NANO_PRIO, highPriority);
@@ -700,7 +701,9 @@ void CProjectileHandler::AddNanoParticle(
 		{tColor[0], tColor[1], tColor[2],  tAlpha},
 	};
 
-	projMemPool.alloc<CNanoProjectile>(startPos, dif, int(l), colors[globalRendering->teamNanospray]);
+	auto* p = projMemPool.alloc<CNanoProjectile>(startPos, dif, int(l), colors[globalRendering->teamNanospray]);
+	if (p != nullptr && trackTarget != nullptr)
+		p->SetTarget(trackTarget);
 }
 
 void CProjectileHandler::AddNanoParticle(
@@ -710,7 +713,8 @@ void CProjectileHandler::AddNanoParticle(
 	int teamNum,
 	float radius,
 	bool inverse,
-	bool highPriority
+	bool highPriority,
+	CSolidObject* trackTarget
 ) {
 	RECOIL_DETAILED_TRACY_ZONE;
 	const float priority = mix(NORMAL_NANO_PRIO, HIGH_NANO_PRIO, highPriority);
@@ -738,8 +742,11 @@ void CProjectileHandler::AddNanoParticle(
 		{tColor[0], tColor[1], tColor[2],  tAlpha},
 	};
 
+	CNanoProjectile* p = nullptr;
 	if (!inverse) {
-		projMemPool.alloc<CNanoProjectile>(startPos, dif * 3.0f, int(len / 3.0f), colors[globalRendering->teamNanospray]);
+		p = projMemPool.alloc<CNanoProjectile>(startPos, dif * 3.0f, int(len / 3.0f), colors[globalRendering->teamNanospray]);
+		if (p != nullptr && trackTarget != nullptr)
+			p->SetTarget(trackTarget);
 	} else {
 		projMemPool.alloc<CNanoProjectile>(startPos + dif * len, -dif * 3.0f, int(len / 3.0f), colors[globalRendering->teamNanospray]);
 	}
