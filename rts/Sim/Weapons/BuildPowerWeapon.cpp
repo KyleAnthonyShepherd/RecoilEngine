@@ -185,7 +185,7 @@ void CBuildPowerWeapon::ApplyBuildPowerUnit(CUnit* target, int action)
 			const float speed = reclaimSpeed;
 
 			if (target->AddBuildPower(owner, -speed))
-				CreateBuildPowerVisual(target->midPos, target->radius * 0.7f, true, target);
+				CreateBuildPowerVisual(target->midPos, target->radius * 0.7f, true, owner);
 		} break;
 
 		case BP_Capture: {
@@ -213,7 +213,7 @@ void CBuildPowerWeapon::ApplyBuildPowerFeature(CFeature* target, int action)
 			const float speed = reclaimSpeed;
 
 			if (target->AddBuildPower(owner, -speed))
-				CreateBuildPowerVisual(target->midPos, target->radius * 0.7f, true, target);
+				CreateBuildPowerVisual(target->midPos, target->radius * 0.7f, true, owner);
 
 			// Feature may have been deleted by AddBuildPower
 			if (target->deleteMe)
@@ -235,9 +235,10 @@ void CBuildPowerWeapon::ApplyBuildPowerFeature(CFeature* target, int action)
 				case BuildActions::ResurrectResult::Restoring:
 					CreateBuildPowerVisual(target->midPos, target->radius * 0.7f, false, target);
 					break;
-				case BuildActions::ResurrectResult::InProgress:
-					CreateBuildPowerVisual(target->midPos, target->radius * 0.7f, (gsRNG.NextInt(2) != 0), target);
-					break;
+				case BuildActions::ResurrectResult::InProgress: {
+					const bool inv = (gsRNG.NextInt(2) != 0);
+					CreateBuildPowerVisual(target->midPos, target->radius * 0.7f, inv, inv ? static_cast<CSolidObject*>(owner) : static_cast<CSolidObject*>(target));
+				}	break;
 				case BuildActions::ResurrectResult::Completed:
 					ClearFeatureTarget();
 					break;

@@ -745,11 +745,11 @@ void CProjectileHandler::AddNanoParticle(
 	CNanoProjectile* p = nullptr;
 	if (!inverse) {
 		p = projMemPool.alloc<CNanoProjectile>(startPos, dif * 3.0f, int(len / 3.0f), colors[globalRendering->teamNanospray]);
-		if (p != nullptr && trackTarget != nullptr)
-			p->SetTarget(trackTarget);
 	} else {
-		projMemPool.alloc<CNanoProjectile>(startPos + dif * len, -dif * 3.0f, int(len / 3.0f), colors[globalRendering->teamNanospray]);
+		p = projMemPool.alloc<CNanoProjectile>(startPos + dif * len, -dif * 3.0f, int(len / 3.0f), colors[globalRendering->teamNanospray]);
 	}
+	if (p != nullptr && trackTarget != nullptr)
+		p->SetTarget(trackTarget);
 }
 
 float CProjectileHandler::GetParticleSaturation(bool randomized) const
